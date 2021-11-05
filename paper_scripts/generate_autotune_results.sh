@@ -28,12 +28,8 @@ BEST_SCHEDULES_DIR=$(dirname $0)/best
 
 HALIDE_ROOT="/home/xuanda/dev/Halide"
 
-# build_autoscheduler_tools ${HALIDE_ROOT}
+source $(dirname $0)/utils.sh
 
-# get_absolute_autoscheduler_bin_dir ${HALIDE_ROOT} AUTOSCHED_BIN
-
-
-# export CXX="ccache ${CXX}"
 export CXX="g++"
 
 export HL_MACHINE_PARAMS=20,24000000,160
@@ -62,51 +58,9 @@ DEFAULT_SAMPLES_DIR_NAME="${SAMPLES_DIR:-autotuned_samples}"
 
 CURRENT_DATE_TIME="`date +%Y-%m-%d-%H-%M-%S`";
 
-# function ctrl_c() {
-#     echo "Trap: CTRL+C received, exiting"
-#     pkill -P $$
-
-#     for app in $APPS; do
-#         ps aux | grep ${app}.generator | awk '{print $2}' | xargs kill
-
-#         unset -v LATEST_SAMPLES_DIR
-#         for f in "$APP_DIR/${DEFAULT_SAMPLES_DIR_NAME}"*; do
-#             if [[ ! -d $f ]]; then
-#                continue
-#            fi
-
-#             if [[ -z ${LATEST_SAMPLES_DIR+x} || $f -nt $LATEST_SAMPLES_DIR ]]; then
-#                 LATEST_SAMPLES_DIR=$f
-#             fi
-#         done
-
-#         if [[ ${RESUME} -eq 1 && -z ${LATEST_SAMPLES_DIR+x} ]]; then
-#             SAMPLES_DIR=${LATEST_SAMPLES_DIR}
-#         else
-#             while [[ 1 ]]; do
-#                 SAMPLES_DIR_NAME=${DEFAULT_SAMPLES_DIR_NAME}-${CURRENT_DATE_TIME}
-#                 SAMPLES_DIR="${APP_DIR}/${SAMPLES_DIR_NAME}"
-
-#                 if [[ ! -d ${SAMPLES_DIR} ]]; then
-#                     break
-#                 fi
-
-#                 sleep 1
-#                 CURRENT_DATE_TIME="`date +%Y-%m-%d-%H-%M-%S`";
-#             done
-#         fi
-#         save_best_schedule_result ${BEST_SCHEDULES_DIR} ${SAMPLES_DIR}
-#     done
-
-#     print_best_schedule_times $(dirname $0)/best
-#     exit
-# }
-
-# trap ctrl_c INT
-
 if [ -z $APP ]; then
-    # APPS="stencil_chain unsharp"
-    APPS="bgu bilateral_grid camera_pipe conv_layer hist iir_blur interpolate lens_blur local_laplacian max_filter nl_means stencil_chain unsharp"
+    APPS="stencil_chain"
+    # APPS="bgu bilateral_grid camera_pipe conv_layer hist iir_blur interpolate lens_blur local_laplacian max_filter nl_means stencil_chain unsharp"
     # APPS="bgu bilateral_grid blur local_laplacian nl_means lens_blur camera_pipe hist max_filter interpolate conv_layer"
 else
     APPS=${APP}
@@ -182,24 +136,4 @@ for app in $APPS; do
             --limit="0"
     awk -F", " '{printf("%f, %f\n", $2, $3);}' ${PREDICTIONS_WITH_FILENAMES_FILE} > ${PREDICTIONS_FILE}
 
-#     find_outliers ${PREDICTIONS_WITH_FILENAMES_FILE} ${OUTLIERS_FILE}
-
-#     extract_best_times ${HALIDE_ROOT} ${SAMPLES_DIR} ${BEST_TIMES_FILE}
-#     echo "Computing average statistics..."
-#     bash $(dirname $0)/../scripts/average_times.sh ${SAMPLES_DIR} >> ${OUTPUT_FILE}
-
-#     SCRIPTS_DIR="$(dirname $0)/../scripts"
-#     python3 ${SCRIPTS_DIR}/rsquared.py --predictions ${PREDICTIONS_FILE} >> ${OUTPUT_FILE}
-#     echo "Total autotune time (s): ${SECONDS}" >> ${OUTPUT_FILE}
-
-#     save_best_schedule_result ${BEST_SCHEDULES_DIR} ${SAMPLES_DIR}
-
-#     if [[ $COMPARE_WITH_METRICS == 1 ]]; then
-#         echo "Comparing with metrics..."
-#         bash ${SCRIPTS_DIR}/compare_with_metrics.sh ${app} ${CURRENT_DATE_TIME} 5
-#     fi
-
-#     bash ${SCRIPTS_DIR}/app_predictions.sh $(basename ${SAMPLES_DIR}) ${app}
 done
-
-# print_best_schedule_times $(dirname $0)/best
