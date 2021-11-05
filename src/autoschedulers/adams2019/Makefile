@@ -109,7 +109,7 @@ $(BIN)/weightsdir_to_weightsfile: $(SRC)/weightsdir_to_weightsfile.cpp $(SRC)/We
 
 # This is the value that machine_params defaults to if no custom value is specified;
 # see MachineParams::generic()
-HL_MACHINE_PARAMS ?= 32,25165824,160
+HL_MACHINE_PARAMS ?= 20,25165824,160
 
 
 # A sample generator to autoschedule. Note that if it statically links

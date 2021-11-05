@@ -53,3 +53,19 @@ $(BIN)/%/viz_auto.mp4: $(BIN)/%/filter_viz ../support/viz_auto.sh ../../bin/Hali
 
 viz_auto: $(BIN)/$(HL_TARGET)/viz_auto.mp4
 	$(HL_VIDEOPLAYER) $^
+
+BATCH_ID ?= 0
+TRAIN_ONLY ?= 0
+SAMPLES_DIR ?= autotuned_samples
+autotune: $(GENERATOR_BIN)/bilateral_grid.generator $(AUTOSCHED_BIN)/featurization_to_sample $(AUTOSCHED_BIN)/retrain_cost_model $(AUTOSCHED_BIN)/libautoschedule_adams2019.so $(AUTOSCHED_SRC)/autotune_loop.sh
+	HL_MACHINE_PARAMS=20,1,1 \
+	SAMPLES_DIR=$(SAMPLES_DIR) \
+	HL_PERMIT_FAILED_UNROLL=1 \
+	bash $(AUTOSCHED_SRC)/autotune_loop.sh \
+		$(GENERATOR_BIN)/bilateral_grid.generator \
+		bilateral_grid \
+		$(HL_TARGET) \
+		$(AUTOSCHED_SRC)/baseline.weights \
+		$(AUTOSCHED_BIN) \
+		$(HALIDE_DISTRIB_PATH) \
+		$(SAMPLES_DIR)

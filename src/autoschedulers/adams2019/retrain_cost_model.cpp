@@ -30,9 +30,14 @@ struct Flags {
     string initial_weights_path;
     string weights_out_path;
     int num_cores = 32;
+    bool reset_weights = false;
     bool randomize_weights = false;
     string best_benchmark_path;
     string best_schedule_path;
+    string predictions_file;
+    bool verbose;
+    bool partition_schedules;
+    int limit;
 
     Flags(int argc, char **argv) {
         cmdline::parser a;
@@ -48,6 +53,10 @@ struct Flags {
         a.add<int>("num_cores");
         a.add<string>("best_benchmark");
         a.add<string>("best_schedule");
+        a.add<string>("predictions_file");
+        a.add<bool>("verbose");
+        a.add<bool>("partition_schedules");
+        a.add<int>("limit");
 
         a.parse_check(argc, argv);  // exits if parsing fails
 
@@ -58,6 +67,10 @@ struct Flags {
         randomize_weights = a.exist("randomize_weights") && a.get<bool>("randomize_weights");
         best_benchmark_path = a.get<string>("best_benchmark");
         best_schedule_path = a.get<string>("best_schedule");
+        predictions_file = a.get<string>("predictions_file");
+        verbose = a.exist("verbose") && a.get<bool>("verbose");
+        partition_schedules = a.exist("partition_schedules") && a.get<bool>("partition_schedules");
+        limit = a.get<int>("limit");
 
         if (epochs <= 0) {
             std::cerr << "--epochs must be specified and > 0.\n";
@@ -157,6 +170,25 @@ string leaf(const string &path) {
     } else {
         return path;
     }
+}
+
+void save_predictions(const map<int, PipelineSample> &samples, const string &filename) {
+    std::ostringstream out;
+    for (const auto &p : samples) {
+        for (const auto &sched : p.second.schedules) {
+            if (sched.second.runtimes.empty()) {
+                continue;
+            }
+            out << sched.second.filename << ", " << sched.second.prediction[0] << ", " << sched.second.runtimes[0] << "\n";
+        }
+    }
+
+    std::ofstream file(filename, std::ios_base::trunc);
+    file << out.str();
+    file.close();
+    assert(!file.fail());
+
+    std::cout << "Predictions saved to: " << filename << "\n";
 }
 
 // Load all the samples, reading filenames from stdin
@@ -371,7 +403,7 @@ int main(int argc, char **argv) {
     Flags flags(argc, argv);
 
     auto samples = load_samples(flags);
-
+    bool predict_only = !flags.predictions_file.empty();
     // Iterate through the pipelines
     vector<std::unique_ptr<DefaultCostModel>> tpp;
     for (int i = 0; i < kModels; i++) {
@@ -447,18 +479,19 @@ int main(int argc, char **argv) {
                         tp->reset();
                         tp->set_pipeline_features(p.second.pipeline_features, flags.num_cores);
 
-                        size_t batch_size = std::min((size_t)1024, p.second.schedules.size());
-
+                        size_t batch_size = std::min((size_t)190, p.second.schedules.size());
+                        std::cout << "[Xuanda] batch size: " << batch_size << std::endl;
                         size_t fastest_idx = 0;
                         Halide::Runtime::Buffer<float> runtimes(batch_size);
 
                         size_t first = 0;
-                        if (p.second.schedules.size() > 1024) {
-                            first = rng() % (p.second.schedules.size() - 1024);
-                        }
+                        // if (p.second.schedules.size() > 1024) {
+                        //     first = rng() % (p.second.schedules.size() - 1024);
+                        // }
 
                         auto it = p.second.schedules.begin();
                         std::advance(it, first);
+                        std::cout << "[Xuanda] before batch loading" << std::endl;
                         for (size_t j = 0; j < batch_size; j++) {
                             auto &sched = it->second;
                             Halide::Runtime::Buffer<float> buf;
@@ -469,10 +502,13 @@ int main(int argc, char **argv) {
                             }
                             buf.copy_from(sched.schedule_features);
                             it++;
+                            std::cout << "[Xuanda] batch loading " << sched.filename << std::endl;
                         }
+                        std::cout << "[Xuanda] after batch loading" << std::endl;
 
                         float loss = 0.0f;
-                        if (train) {
+                        if (train && !predict_only) {
+                            std::cout << "enter training" << std::endl;
                             loss = tp->backprop(runtimes, learning_rate);
                             assert(!std::isnan(loss));
                             loss_sum[model] += loss;
@@ -595,6 +631,7 @@ int main(int argc, char **argv) {
             tpp[best_model]->save_weights();
 
             if (loss_sum[best_model] < 1e-5f) {
+                save_predictions(samples, flags.predictions_file);
                 std::cout << "Zero loss, returning early\n";
                 return 0;
             }
@@ -602,6 +639,9 @@ int main(int argc, char **argv) {
     }
 
     // tpp.save_weights();
-
+    if (predict_only) {
+        save_predictions(samples, flags.predictions_file);
+        // save_predictions(validation_set, flags.predictions_file + "_validation_set");
+    }
     return 0;
 }

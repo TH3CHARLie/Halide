@@ -20,7 +20,8 @@ START_WEIGHTS_FILE=${4}
 AUTOSCHED_BIN=${5}
 HALIDE_DISTRIB_PATH=${6}
 SAMPLES=${7}
-
+echo "sample dirs"
+echo ${SAMPLES}
 # Read the generator-arg sets into an array. Each set is delimited
 # by space; multiple values within each set are are delimited with ;
 # e.g. "set1arg1=1;set1arg2=foo set2=bar set3arg1=3.14;set4arg2=42"
@@ -75,7 +76,7 @@ done
 
 # A batch of this many samples is built in parallel, and then
 # benchmarked serially.
-BATCH_SIZE=32
+BATCH_SIZE=40
 
 TIMEOUT_CMD="timeout"
 if [ $(uname -s) = "Darwin" ] && ! which $TIMEOUT_CMD 2>&1 >/dev/null; then
@@ -109,7 +110,7 @@ make_featurization() {
         HL_WEIGHTS_DIR=${WEIGHTS} \
         HL_RANDOM_DROPOUT=${dropout} \
         HL_BEAM_SIZE=${beam} \
-        HL_MACHINE_PARAMS=32,24000000,40 \
+        HL_MACHINE_PARAMS=20,24000000,40 \
         ${TIMEOUT_CMD} -k ${COMPILATION_TIMEOUT} ${COMPILATION_TIMEOUT} \
         ${GENERATOR} \
         -g ${PIPELINE} \
@@ -119,10 +120,10 @@ make_featurization() {
         target=${HL_TARGET} \
         auto_schedule=true \
         ${EXTRA_GENERATOR_ARGS} \
-        -p ${AUTOSCHED_BIN}/libautoschedule_adams2019.so \
         -s Adams2019 \
-          2> ${D}/compile_log.txt || echo "Compilation failed or timed out for ${D}"
-
+        # -p ${AUTOSCHED_BIN}/libautoschedule_adams2019.so \
+        2> ${D}/compile_log.txt || echo "Compilation failed or timed out for ${D}"
+          
 
     # We don't need image I/O for this purpose,
     # so leave out libpng and libjpeg
@@ -141,7 +142,7 @@ make_featurization() {
 benchmark_sample() {
     sleep 1 # Give CPU clocks a chance to spin back up if we're thermally throttling
     D=${1}
-    HL_NUM_THREADS=32 \
+    HL_NUM_THREADS=20 \
         ${TIMEOUT_CMD} -k ${BENCHMARKING_TIMEOUT} ${BENCHMARKING_TIMEOUT} \
         ${D}/bench \
         --estimate_all \
@@ -166,10 +167,12 @@ else
 fi
 echo Local number of cores detected as ${LOCAL_CORES}
 
-NUM_BATCHES=1
+NUM_BATCHES="1"
+# NUM_BATCHES=${NUM_BATCHES:-1}
+echo "Num batches: ${NUM_BATCHES}"
 
 for ((BATCH_ID=$((FIRST+1));BATCH_ID<$((FIRST+1+NUM_BATCHES));BATCH_ID++)); do
-
+    BATCH_ID=51
     SECONDS=0
 
     for ((EXTRA_ARGS_IDX=0;EXTRA_ARGS_IDX<${#GENERATOR_ARGS_SETS_ARRAY[@]};EXTRA_ARGS_IDX++)); do
@@ -223,11 +226,15 @@ for ((BATCH_ID=$((FIRST+1));BATCH_ID<$((FIRST+1+NUM_BATCHES));BATCH_ID++)); do
             ${AUTOSCHED_BIN}/retrain_cost_model \
                 --epochs=${BATCH_SIZE} \
                 --rates="0.0001" \
-                --num_cores=32 \
+                --num_cores=20 \
                 --initial_weights=${WEIGHTS} \
                 --weights_out=${WEIGHTS} \
                 --best_benchmark=${SAMPLES}/best.${PIPELINE}.benchmark.txt \
-                --best_schedule=${SAMPLES}/best.${PIPELINE}.schedule.h
+                --best_schedule=${SAMPLES}/best.${PIPELINE}.schedule.h \
+                --predictions_file=${SAMPLES}/tmp_predictions \
+                --verbose="0" \
+                --partition_schedules="0" \
+                --limit="0"
     done
 
     echo Batch ${BATCH_ID} took ${SECONDS} seconds to compile, benchmark, and retrain

@@ -1967,7 +1967,9 @@ TEST_APPS=\
 	resize \
 	resnet_50 \
 	stencil_chain \
-	wavelet
+	wavelet \
+	iir_blur \
+	unsharp
 
 TEST_APPS_DEPS=$(TEST_APPS:%=%_test_app)
 BUILD_APPS_DEPS=$(TEST_APPS:%=%_build_app)
