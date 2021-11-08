@@ -128,6 +128,7 @@ for app in $APPS; do
             --num_cores=20 \
             --initial_weights=${WEIGHTS_FILE} \
             --weights_out=${WEIGHTS_FILE} \
+            --predict_only="1" \
             --best_benchmark=${SAMPLES_DIR}/best.${PIPELINE}.benchmark.txt \
             --best_schedule=${SAMPLES_DIR}/best.${PIPELINE}.schedule.h \
             --predictions_file=${PREDICTIONS_WITH_FILENAMES_FILE} \

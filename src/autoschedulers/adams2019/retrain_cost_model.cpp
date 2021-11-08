@@ -32,6 +32,7 @@ struct Flags {
     int num_cores = 32;
     bool reset_weights = false;
     bool randomize_weights = false;
+    bool predict_only = false;
     string best_benchmark_path;
     string best_schedule_path;
     string predictions_file;
@@ -50,6 +51,7 @@ struct Flags {
         a.add<string>("initial_weights", '\0', kNoDesc, kOptional, "");
         a.add<string>("weights_out");
         a.add<bool>("randomize_weights", '\0', kNoDesc, kOptional, false);
+        a.add<bool>("predict_only", '\0', kNoDesc, kOptional, false);
         a.add<int>("num_cores");
         a.add<string>("best_benchmark");
         a.add<string>("best_schedule");
@@ -65,6 +67,7 @@ struct Flags {
         initial_weights_path = a.get<string>("initial_weights");
         weights_out_path = a.get<string>("weights_out");
         randomize_weights = a.exist("randomize_weights") && a.get<bool>("randomize_weights");
+        predict_only = a.exist("predict_only") && a.get<bool>("predict_only");
         best_benchmark_path = a.get<string>("best_benchmark");
         best_schedule_path = a.get<string>("best_schedule");
         predictions_file = a.get<string>("predictions_file");
@@ -403,7 +406,8 @@ int main(int argc, char **argv) {
     Flags flags(argc, argv);
 
     auto samples = load_samples(flags);
-    bool predict_only = !flags.predictions_file.empty();
+    bool predict_only = flags.predict_only;
+    std::cout << "[Xuanda]: predict_only: " << std::boolalpha << predict_only << '\n'; 
     // Iterate through the pipelines
     vector<std::unique_ptr<DefaultCostModel>> tpp;
     for (int i = 0; i < kModels; i++) {
@@ -479,8 +483,7 @@ int main(int argc, char **argv) {
                         tp->reset();
                         tp->set_pipeline_features(p.second.pipeline_features, flags.num_cores);
 
-                        size_t batch_size = std::min((size_t)190, p.second.schedules.size());
-                        std::cout << "[Xuanda] batch size: " << batch_size << std::endl;
+                        size_t batch_size = std::min((size_t)1024, p.second.schedules.size());
                         size_t fastest_idx = 0;
                         Halide::Runtime::Buffer<float> runtimes(batch_size);
 
@@ -491,7 +494,6 @@ int main(int argc, char **argv) {
 
                         auto it = p.second.schedules.begin();
                         std::advance(it, first);
-                        std::cout << "[Xuanda] before batch loading" << std::endl;
                         for (size_t j = 0; j < batch_size; j++) {
                             auto &sched = it->second;
                             Halide::Runtime::Buffer<float> buf;
@@ -502,13 +504,10 @@ int main(int argc, char **argv) {
                             }
                             buf.copy_from(sched.schedule_features);
                             it++;
-                            std::cout << "[Xuanda] batch loading " << sched.filename << std::endl;
                         }
-                        std::cout << "[Xuanda] after batch loading" << std::endl;
 
                         float loss = 0.0f;
-                        if (train && !predict_only) {
-                            std::cout << "enter training" << std::endl;
+                        if (train & predict_only) {
                             loss = tp->backprop(runtimes, learning_rate);
                             assert(!std::isnan(loss));
                             loss_sum[model] += loss;

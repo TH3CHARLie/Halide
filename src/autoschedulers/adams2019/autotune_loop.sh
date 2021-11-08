@@ -167,12 +167,11 @@ else
 fi
 echo Local number of cores detected as ${LOCAL_CORES}
 
-NUM_BATCHES="1"
-# NUM_BATCHES=${NUM_BATCHES:-1}
+# NUM_BATCHES="1"
+NUM_BATCHES=${NUM_BATCHES:-1}
 echo "Num batches: ${NUM_BATCHES}"
 
 for ((BATCH_ID=$((FIRST+1));BATCH_ID<$((FIRST+1+NUM_BATCHES));BATCH_ID++)); do
-    BATCH_ID=51
     SECONDS=0
 
     for ((EXTRA_ARGS_IDX=0;EXTRA_ARGS_IDX<${#GENERATOR_ARGS_SETS_ARRAY[@]};EXTRA_ARGS_IDX++)); do
@@ -229,6 +228,7 @@ for ((BATCH_ID=$((FIRST+1));BATCH_ID<$((FIRST+1+NUM_BATCHES));BATCH_ID++)); do
                 --num_cores=20 \
                 --initial_weights=${WEIGHTS} \
                 --weights_out=${WEIGHTS} \
+                --predict_only="0" \
                 --best_benchmark=${SAMPLES}/best.${PIPELINE}.benchmark.txt \
                 --best_schedule=${SAMPLES}/best.${PIPELINE}.schedule.h \
                 --predictions_file=${SAMPLES}/tmp_predictions \
