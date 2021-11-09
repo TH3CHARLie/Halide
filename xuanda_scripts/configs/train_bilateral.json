@@ -1,0 +1,6 @@
+{
+  "HALIDE_ROOT_PATH": "/home/xuanda/dev/Halide",
+  "AUTOSCHED_BIN": "/home/xuanda/dev/Halide/bin",
+  "HALIDE_DISTRIB_PATH": "/home/xuanda/dev/Halide/distrib",
+  "HL_MACHINE_PARAMS": "20,20971520,160"
+}
