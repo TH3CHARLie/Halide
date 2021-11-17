@@ -203,7 +203,15 @@ for ((BATCH_ID=$((FIRST+1));BATCH_ID<$((FIRST+1+NUM_BATCHES));BATCH_ID++)); do
                 fi
             done
 
-            S=$(printf "%04d%04d" $BATCH_ID $SAMPLE_ID)
+            # S=$(printf "%04d%04d" $BATCH_ID $SAMPLE_ID)
+
+            # Xuanda: Uncomment the following line to reproduce outlier samples
+            # bottom left two outliers
+            # S=00290022
+            # S=04350034
+            # top right two outliers
+            # S=03160017
+            # S=00290022
             FNAME=$(printf "%s_batch_%04d_sample_%04d" ${PIPELINE} $BATCH_ID $SAMPLE_ID)
             make_featurization "${DIR}/${SAMPLE_ID}" $S $FNAME "$EXTRA_GENERATOR_ARGS" &
             echo -n .
