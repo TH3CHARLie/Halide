@@ -1,7 +1,7 @@
 #!/bin/bash
 
-if [ $# -ne 3 ]; then
-  echo "Usage: $0 samples_dir weights_file predictions_file"
+if [ $# -ne 4 ]; then
+  echo "Usage: $0 samples_dir weights_file predictions_file sample_file"
   exit
 fi
 
@@ -9,6 +9,7 @@ export AUTOSCHED_BIN="/home/xuanda/dev/Halide/bin"
 SAMPLES_DIR=${1}
 WEIGHTS_FILE=${2}
 PREDICTIONS_FILE=${3}
+SAMPLE_FILE=${4}
 PREDICTIONS_WITH_FILENAMES_FILE="${PREDICTIONS_FILE}_with_filename"
 echo
 echo "Samples directory: ${SAMPLES_DIR}"
@@ -19,7 +20,7 @@ NUM_CORES=20
 NUM_EPOCHS=1
 
 WEIGHTS_OUTFILE="${SAMPLES_DIR}/updated_back.weights"
-find ${SAMPLES_DIR} -name "*.sample" | \
+cat ${SAMPLE_FILE} | \
     ${AUTOSCHED_BIN}/retrain_cost_model \
         --epochs="1" \
         --rates="0.001" \

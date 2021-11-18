@@ -203,7 +203,7 @@ for ((BATCH_ID=$((FIRST+1));BATCH_ID<$((FIRST+1+NUM_BATCHES));BATCH_ID++)); do
                 fi
             done
 
-            # S=$(printf "%04d%04d" $BATCH_ID $SAMPLE_ID)
+            S=$(printf "%04d%04d" $BATCH_ID $SAMPLE_ID)
 
             # Xuanda: Uncomment the following line to reproduce outlier samples
             # bottom left two outliers

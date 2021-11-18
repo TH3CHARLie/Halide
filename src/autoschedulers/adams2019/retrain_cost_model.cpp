@@ -477,9 +477,9 @@ int main(int argc, char **argv) {
                         if (kModels > 1 && rng() & 1) {
                             continue;  // If we are training multiple kModels, allow them to diverge.
                         }
-                        if (p.second.schedules.size() < 8) {
-                            continue;
-                        }
+                        // if (p.second.schedules.size() < 8) {
+                        //     continue;
+                        // }
                         tp->reset();
                         tp->set_pipeline_features(p.second.pipeline_features, flags.num_cores);
 
@@ -507,7 +507,7 @@ int main(int argc, char **argv) {
                         }
 
                         float loss = 0.0f;
-                        if (train & predict_only) {
+                        if (train & !predict_only) {
                             loss = tp->backprop(runtimes, learning_rate);
                             assert(!std::isnan(loss));
                             loss_sum[model] += loss;
@@ -574,7 +574,7 @@ int main(int argc, char **argv) {
 
                 counter++;
             }
-
+            std::cout << "Epoch: " << e << " ";
             std::cout << "Loss: ";
             for (int model = 0; model < kModels; model++) {
                 std::cout << loss_sum[model] / loss_sum_counter[model] << " ";
