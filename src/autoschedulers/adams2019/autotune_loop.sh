@@ -150,7 +150,7 @@ benchmark_sample() {
             | tee ${D}/bench.txt || echo "Benchmarking failed or timed out for ${D}"
 
     # Add the runtime, pipeline id, and schedule id to the feature file
-    R=$(cut -d' ' -f8 < ${D}/bench.txt)
+    R=$(cat ${D}/bench.txt | head -n1 | cut -d' ' -f8)
     P=$3
     S=$2
     FNAME=$4
