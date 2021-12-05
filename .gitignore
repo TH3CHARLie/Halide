@@ -97,3 +97,5 @@ src/.tags_sorted_by_file
 /cmake-build-*/
 .vscode
 *.png
+/.mypy_cache
+/results-*/
