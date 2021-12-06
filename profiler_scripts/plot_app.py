@@ -13,7 +13,7 @@ from scipy import stats
 import numpy as np
 import json
 from json import JSONEncoder
-
+from common import SampleDict
 
 styles = {
     'pre': {
@@ -26,6 +26,22 @@ styles = {
 class SampleEncoder(JSONEncoder):
         def default(self, o):
             return o.__dict__
+
+
+def compute_correspondence(sample: SampleDict):
+    res = {}
+    runs = sample.perf.runs
+    for func in sample.perf.func_perf_counters:
+        func_name = func.name
+        if func_name in sample.compiled_features:
+            res[func_name] = {}
+            average_num_allocations = func.num_allocations / runs
+            num_realization = sample.compiled_features[func_name]["num_realizations"]
+            res[func_name]["average_num_allocations"] = average_num_allocations
+            res[func_name]["num_realizations"] = num_realization
+            res[func_name]["average_allocation_sizes"] = func.avg_size_allocations
+            res[func_name]["bytes_at_realization"] = sample.compiled_features[func_name]["bytes_at_realization"]
+    return json.dumps(res, indent=2)
 
 
 def parse_args():
@@ -60,7 +76,7 @@ def relative_loss(predicted_runtimes, actual_runtimes):
 
 def run(samples):
     sample_names = [x.sample_name for x in samples]
-    sample_jsonfied = [json.dumps(x, cls=SampleEncoder, indent=2) for x in samples]
+    sample_jsonfied = [compute_correspondence(x) + '\n' + json.dumps(x, cls=SampleEncoder, indent=2) for x in samples]
     actual_runtimes = [x.actual_runtime for x in samples]
     predicted_runtimes = [x.predicted_runtime for x in samples]
     df = pd.DataFrame(dict(
@@ -110,6 +126,7 @@ def run(samples):
             ], className='three columns')
         ])
     ])
+    app.title = "Autoscheduler results visualization"
 
     @app.callback(
         Output('hover-data', 'children'),

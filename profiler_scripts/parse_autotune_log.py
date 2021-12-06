@@ -1,7 +1,8 @@
+#!/usr/bin/env python
 import os
 import sys
 import argparse
-from common import FeatureDict, SampleDict, FuncPerf, ProgramPerf
+from common import SampleDict, FuncPerf, ProgramPerf
 import pprint
 import pickle
 
@@ -27,7 +28,7 @@ def parse_autotune_log(sample_file):
         predicted_runtimes.append(float(tokens[1][:-1]))
         actual_runtimes.append(float(tokens[2]))
 
-    sample_names = [x[x.rfind('/') + 1:] for x in sample_paths] 
+    sample_names = [x[x.rfind('/') + 1:] for x in sample_paths]
     sample_folders = [x[:x.rfind('/') + 1] for x in sample_paths]
 
     samples = []
@@ -78,6 +79,7 @@ def parse_benchmark_log(sample_name, compile_log_file):
     lines = [l.strip() for l in lines]
     # skip "Benchmark"
     lines = lines[2:]
+    runs = int(lines[1].split()[7])
     avg_threads = float(lines[2].split()[3])
     heap_allocations = float(lines[3].split()[2])
     peak_heap_usage = float(lines[3].split()[6])
@@ -93,20 +95,20 @@ def parse_benchmark_log(sample_name, compile_log_file):
         stage_avg_size_allocations = -1
         idx = 6
         while idx < len(tokens):
-            if tokens[idx] == "peak":
+            if tokens[idx] == "peak:":
                 stage_peak_usage = float(tokens[idx + 1])
-            elif tokens[idx] == "stack":
+            elif tokens[idx] == "stack:":
                 stage_stack_space = float(tokens[idx + 1])
-            elif tokens[idx] == "num":
+            elif tokens[idx] == "num:":
                 stage_num_allocations = float(tokens[idx + 1])
-            elif tokens[idx] == "avg":
+            elif tokens[idx] == "avg:":
                 stage_avg_size_allocations = float(tokens[idx + 1])
             idx += 2
-        func_perf_counter = FuncPerf(stage_name, stage_runtime, stage_threads, 
-                                            stage_peak_usage, stage_stack_space, 
+        func_perf_counter = FuncPerf(stage_name, stage_runtime, stage_threads,
+                                            stage_peak_usage, stage_stack_space,
                                             stage_num_allocations, stage_avg_size_allocations)
         func_perf_counters.append(func_perf_counter)
-    program_perf_counter = ProgramPerf(avg_threads, heap_allocations, peak_heap_usage, func_perf_counters)
+    program_perf_counter = ProgramPerf(runs, avg_threads, heap_allocations, peak_heap_usage, func_perf_counters)
     return program_perf_counter
 
 

@@ -14,6 +14,7 @@ class FuncPerf:
 
 @dataclass
 class ProgramPerf:
+    runs: int
     avg_threads: float
     heap_allocations: float
     peak_heap_usage: float
@@ -21,15 +22,9 @@ class ProgramPerf:
 
 
 @dataclass
-class FeatureDict:
-    pass
-#     stages: 
-
-
-@dataclass
 class SampleDict:
     sample_name: str
     actual_runtime: float
     predicted_runtime: float
-    compiled_features: Dict[str, Dict[str, Dict[str, float]]]
-    perf: Dict[str, ProgramPerf]
+    compiled_features: Dict[str, Dict[str, float]]
+    perf: ProgramPerf
