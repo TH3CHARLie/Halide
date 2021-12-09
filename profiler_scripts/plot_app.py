@@ -73,12 +73,22 @@ def relative_loss(predicted_runtimes, actual_runtimes):
     predicted[predicted < 1e-10] = 1e-10
     return np.sum((1.0 / predicted - 1.0 / actual) ** 2)
 
+def compute_seed(sample_name):
+    """
+    bilateral_grid_batch_0055_sample_0018.sample
+    """
+    tokens = sample_name.split('_')
+    batch = tokens[3]
+    sample = tokens[5].split('.')[0]
+    return batch + sample
+
 
 def run(samples):
     sample_names = [x.sample_name for x in samples]
     sample_jsonfied = [compute_correspondence(x) + '\n' + json.dumps(x, cls=SampleEncoder, indent=2) for x in samples]
     actual_runtimes = [x.actual_runtime for x in samples]
     predicted_runtimes = [x.predicted_runtime for x in samples]
+    seeds = [compute_seed(x.sample_name) for x in samples]
     df = pd.DataFrame(dict(
         predicted_runtimes = predicted_runtimes,
         actual_runtimes = actual_runtimes
@@ -92,7 +102,10 @@ def run(samples):
         mode='markers',
         hovertemplate =
         'predicted_runtime: %{x}'+
-        '<br>actual_runtime: %{y}'))
+        '<br>actual_runtime: %{y}'+
+        '<br>seed: %{text}',
+        text=seeds)
+        )
     fig.add_trace(go.Scatter(x=[0, max_val], y=[0, max_val], mode='lines'))
     fig.update_layout(
         autosize=False,
