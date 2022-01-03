@@ -20,8 +20,6 @@ START_WEIGHTS_FILE=${4}
 AUTOSCHED_BIN=${5}
 HALIDE_DISTRIB_PATH=${6}
 SAMPLES=${7}
-echo "sample dirs"
-echo ${SAMPLES}
 # Read the generator-arg sets into an array. Each set is delimited
 # by space; multiple values within each set are are delimited with ;
 # e.g. "set1arg1=1;set1arg2=foo set2=bar set3arg1=3.14;set4arg2=42"
@@ -76,7 +74,7 @@ done
 
 # A batch of this many samples is built in parallel, and then
 # benchmarked serially.
-BATCH_SIZE=40
+BATCH_SIZE=1
 
 TIMEOUT_CMD="timeout"
 if [ $(uname -s) = "Darwin" ] && ! which $TIMEOUT_CMD 2>&1 >/dev/null; then
@@ -106,6 +104,7 @@ make_featurization() {
         dropout=1  # 1% chance of operating entirely greedily
         beam=1
     fi
+    HL_DEBUG_CODEGEN=1 \
     HL_SEED=${SEED} \
         HL_WEIGHTS_DIR=${WEIGHTS} \
         HL_RANDOM_DROPOUT=${dropout} \
@@ -121,7 +120,6 @@ make_featurization() {
         auto_schedule=true \
         ${EXTRA_GENERATOR_ARGS} \
         -s Adams2019 \
-        # -p ${AUTOSCHED_BIN}/libautoschedule_adams2019.so \
         2> ${D}/compile_log.txt || echo "Compilation failed or timed out for ${D}"
 
 
@@ -142,19 +140,19 @@ make_featurization() {
 benchmark_sample() {
     sleep 1 # Give CPU clocks a chance to spin back up if we're thermally throttling
     D=${1}
-    HL_NUM_THREADS=20 \
-        ${TIMEOUT_CMD} -k ${BENCHMARKING_TIMEOUT} ${BENCHMARKING_TIMEOUT} \
-        ${D}/bench \
-        --estimate_all \
-        --benchmarks=all \
-            | tee ${D}/bench.txt || echo "Benchmarking failed or timed out for ${D}"
+    PIPE=/tmp/halide_autotune_loop_pipe
+    rm -rf $PIPE
+    mkfifo $PIPE
+
+    HL_TRACE_FILE=${PIPE} HL_NUM_THREADS=1 ${D}/bench --estimate_all --benchmarks=all &
+        ${AUTOSCHED_BIN}/HalideTraceCounter "${D}/counters.txt" 0<${PIPE}
 
     # Add the runtime, pipeline id, and schedule id to the feature file
-    R=$(cat ${D}/bench.txt | head -n1 | cut -d' ' -f8)
-    P=$3
-    S=$2
-    FNAME=$4
-    ${AUTOSCHED_BIN}/featurization_to_sample ${D}/${FNAME}.featurization $R $P $S ${D}/${FNAME}.sample || echo "featurization_to_sample failed for ${D} (probably because benchmarking failed)"
+    # R=$(cat ${D}/bench.txt | head -n1 | cut -d' ' -f8)
+    # P=$3
+    # S=$2
+    # FNAME=$4
+    # ${AUTOSCHED_BIN}/featurization_to_sample ${D}/${FNAME}.featurization $R $P $S ${D}/${FNAME}.sample || echo "featurization_to_sample failed for ${D} (probably because benchmarking failed)"
 }
 
 # Don't clobber existing samples
@@ -206,12 +204,7 @@ for ((BATCH_ID=$((FIRST+1));BATCH_ID<$((FIRST+1+NUM_BATCHES));BATCH_ID++)); do
             S=$(printf "%04d%04d" $BATCH_ID $SAMPLE_ID)
 
             # Xuanda: Uncomment the following line to reproduce outlier samples
-            # bottom left two outliers
-            # S=00290022
-            # S=04350034
-            # top right two outliers
-            # S=03160017
-            # S=00290022
+            S=${MY_SEED}
             FNAME=$(printf "%s_batch_%04d_sample_%04d" ${PIPELINE} $BATCH_ID $SAMPLE_ID)
             make_featurization "${DIR}/${SAMPLE_ID}" $S $FNAME "$EXTRA_GENERATOR_ARGS" &
             echo -n .
@@ -229,20 +222,20 @@ for ((BATCH_ID=$((FIRST+1));BATCH_ID<$((FIRST+1+NUM_BATCHES));BATCH_ID++)); do
         # retrain model weights on all samples seen so far
         echo Retraining model...
 
-        find ${SAMPLES} -name "*.sample" | \
-            ${AUTOSCHED_BIN}/retrain_cost_model \
-                --epochs=${BATCH_SIZE} \
-                --rates="0.0001" \
-                --num_cores=20 \
-                --initial_weights=${WEIGHTS} \
-                --weights_out=${WEIGHTS} \
-                --predict_only="0" \
-                --best_benchmark=${SAMPLES}/best.${PIPELINE}.benchmark.txt \
-                --best_schedule=${SAMPLES}/best.${PIPELINE}.schedule.h \
-                --predictions_file=${SAMPLES}/tmp_predictions \
-                --verbose="0" \
-                --partition_schedules="0" \
-                --limit="0"
+        # find ${SAMPLES} -name "*.sample" | \
+        #     ${AUTOSCHED_BIN}/retrain_cost_model \
+        #         --epochs=${BATCH_SIZE} \
+        #         --rates="0.0001" \
+        #         --num_cores=20 \
+        #         --initial_weights=${WEIGHTS} \
+        #         --weights_out=${WEIGHTS} \
+        #         --predict_only="0" \
+        #         --best_benchmark=${SAMPLES}/best.${PIPELINE}.benchmark.txt \
+        #         --best_schedule=${SAMPLES}/best.${PIPELINE}.schedule.h \
+        #         --predictions_file=${SAMPLES}/tmp_predictions \
+        #         --verbose="0" \
+        #         --partition_schedules="0" \
+        #         --limit="0"
     done
 
     echo Batch ${BATCH_ID} took ${SECONDS} seconds to compile, benchmark, and retrain

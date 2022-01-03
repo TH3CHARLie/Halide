@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Counter, Dict, List
 
 @dataclass
 class FuncPerf:
@@ -22,9 +22,17 @@ class ProgramPerf:
 
 
 @dataclass
+class CounterDict:
+    store_counters: Dict[str, int]
+    scalar_load_counters: Dict[str, int]
+    vector_load_counters: Dict[str, int]
+
+
+@dataclass
 class SampleDict:
     sample_name: str
     actual_runtime: float
     predicted_runtime: float
     compiled_features: Dict[str, Dict[str, float]]
     perf: ProgramPerf
+    trace_counters: CounterDict

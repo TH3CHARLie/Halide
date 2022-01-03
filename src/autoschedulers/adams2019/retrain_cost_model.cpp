@@ -407,7 +407,7 @@ int main(int argc, char **argv) {
 
     auto samples = load_samples(flags);
     bool predict_only = flags.predict_only;
-    std::cout << "[Xuanda]: predict_only: " << std::boolalpha << predict_only << '\n'; 
+
     // Iterate through the pipelines
     vector<std::unique_ptr<DefaultCostModel>> tpp;
     for (int i = 0; i < kModels; i++) {

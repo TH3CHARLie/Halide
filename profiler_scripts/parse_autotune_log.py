@@ -2,7 +2,7 @@
 import os
 import sys
 import argparse
-from common import SampleDict, FuncPerf, ProgramPerf
+from common import CounterDict, SampleDict, FuncPerf, ProgramPerf
 import pprint
 import pickle
 
@@ -35,9 +35,11 @@ def parse_autotune_log(sample_file):
     for name, folder, actual_runtime, predicted_runtime in zip(sample_names, sample_folders, actual_runtimes, predicted_runtimes):
         compile_log_file = folder + 'compile_log.txt'
         benchmark_log_file = folder + 'bench.txt'
+        counter_file = folder + 'counters.txt'
         feature_dict = parse_compile_log(name, compile_log_file)
         perf_dict = parse_benchmark_log(name, benchmark_log_file)
-        sample_dict = SampleDict(name, actual_runtime, predicted_runtime, feature_dict, perf_dict)
+        trace_counter_dict = parse_counters(name, counter_file)
+        sample_dict = SampleDict(name, actual_runtime, predicted_runtime, feature_dict, perf_dict, trace_counter_dict)
         samples.append(sample_dict)
     return samples
 
@@ -110,6 +112,40 @@ def parse_benchmark_log(sample_name, compile_log_file):
         func_perf_counters.append(func_perf_counter)
     program_perf_counter = ProgramPerf(runs, avg_threads, heap_allocations, peak_heap_usage, func_perf_counters)
     return program_perf_counter
+
+
+def parse_counters(sample_name, counter_file):
+    lines = []
+    with open(counter_file, "r") as f:
+        lines = f.readlines()
+    lines = [l.strip() for l in lines]
+    store_counters = {}
+    scalar_load_counters = {}
+    vector_load_counters = {}
+    mode = -1 # 0 for store, 1 for scalar_load and 2 for vector_load
+    for line in lines:
+        tokens = line.split()
+        if line == "Vector Load Counters:":
+            mode = 2
+            continue
+        elif line == "Scalar Load Counters:":
+            mode = 1
+            continue
+        elif line == "Store Counters:":
+            mode = 0
+            continue
+        else:
+            func_name = tokens[0][:-1]
+            val = int(tokens[1])
+            if mode == 0:
+                store_counters[func_name] = val
+            elif mode == 1:
+                scalar_load_counters[func_name] = val
+            elif mode == 2:
+                vector_load_counters[func_name] = val
+    counter_dict = CounterDict(store_counters, scalar_load_counters, vector_load_counters)
+    return counter_dict
+
 
 
 def main():

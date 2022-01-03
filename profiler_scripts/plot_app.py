@@ -35,12 +35,27 @@ def compute_correspondence(sample: SampleDict):
         func_name = func.name
         if func_name in sample.compiled_features:
             res[func_name] = {}
-            average_num_allocations = func.num_allocations / runs
-            num_realization = sample.compiled_features[func_name]["num_realizations"]
-            res[func_name]["average_num_allocations"] = average_num_allocations
-            res[func_name]["num_realizations"] = num_realization
-            res[func_name]["average_allocation_sizes"] = func.avg_size_allocations
-            res[func_name]["bytes_at_realization"] = sample.compiled_features[func_name]["bytes_at_realization"]
+            # average_num_allocations = func.num_allocations / runs
+            # num_realization = sample.compiled_features[func_name]["num_realizations"]
+            # res[func_name]["average_num_allocations"] = average_num_allocations
+            # res[func_name]["num_realizations"] = num_realization
+            # res[func_name]["average_allocation_sizes"] = func.avg_size_allocations
+            # res[func_name]["bytes_at_realization"] = sample.compiled_features[func_name]["bytes_at_realization"]
+            res[func_name]["points_computed_total"] = sample.compiled_features[func_name]["points_computed_total"]
+            res[func_name]["num_vectors * scalar_loads_per_vector"] = sample.compiled_features[func_name]["scalar_loads_per_vector"] * sample.compiled_features[func_name]["num_vectors"]
+            res[func_name]["num_vectors * vector_loads_per_vector"] = sample.compiled_features[func_name]["vector_loads_per_vector"] * sample.compiled_features[func_name]["num_vectors"]
+            res[func_name]["num_scalars * scalar_loads_per_scalar"] = sample.compiled_features[func_name]["scalar_loads_per_scalar"] * sample.compiled_features[func_name]["num_scalars"]
+            if func_name == "histogram":
+                res[func_name]["points_computed_total"] += sample.compiled_features["histogram.update(0)"]["points_computed_total"]
+                res[func_name]["num_vectors * scalar_loads_per_vector"] = sample.compiled_features["histogram.update(0)"]["scalar_loads_per_vector"] * sample.compiled_features[func_name]["num_vectors"]
+                res[func_name]["num_vectors * vector_loads_per_vector"] = sample.compiled_features["histogram.update(0)"]["vector_loads_per_vector"] * sample.compiled_features[func_name]["num_vectors"]
+                res[func_name]["num_scalars * scalar_loads_per_scalar"] = sample.compiled_features["histogram.update(0)"]["scalar_loads_per_scalar"] * sample.compiled_features[func_name]["num_scalars"]
+
+
+            res[func_name]["store_counters"] = sample.trace_counters.store_counters[func_name] if func_name in sample.trace_counters.store_counters else 0
+            res[func_name]["vector_load_counters"] = sample.trace_counters.vector_load_counters[func_name] if func_name in sample.trace_counters.vector_load_counters else 0
+            res[func_name]["scalar_load_counters"] = sample.trace_counters.scalar_load_counters[func_name] if func_name in sample.trace_counters.scalar_load_counters else 0
+
     return json.dumps(res, indent=2)
 
 
