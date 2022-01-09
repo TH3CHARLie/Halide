@@ -45,6 +45,9 @@ export HALIDE_DISTRIB_PATH="/home/xuanda/dev/Halide/distrib"
 export SEARCH_SPACE_OPTIONS=01111
 echo "SEARCH_SPACE_OPTIONS set to ${SEARCH_SPACE_OPTIONS}"
 echo
+export PAPI_EVENTS="PAPI_TOT_INS,PAPI_TOT_CYC,PAPI_L1_TCM,PAPI_L2_TCM"
+export PAPI_OUTPUT_DIRECTORY="/home/xuanda/dev/Halide/results-perf-counter"
+
 
 if [ ! -v HL_TARGET ]; then
     get_host_target ${HALIDE_ROOT} HL_TARGET

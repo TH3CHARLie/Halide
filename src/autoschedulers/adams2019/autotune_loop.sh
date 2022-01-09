@@ -76,7 +76,7 @@ done
 
 # A batch of this many samples is built in parallel, and then
 # benchmarked serially.
-BATCH_SIZE=40
+BATCH_SIZE=1
 
 TIMEOUT_CMD="timeout"
 if [ $(uname -s) = "Darwin" ] && ! which $TIMEOUT_CMD 2>&1 >/dev/null; then
@@ -130,12 +130,15 @@ make_featurization() {
     c++ \
         -std=c++17 \
         -I ${HALIDE_DISTRIB_PATH}/include \
+        -I/${PAPI_DIR}/include \
+        -L/${PAPI_DIR}/lib \
         ${HALIDE_DISTRIB_PATH}/tools/RunGenMain.cpp \
         ${D}/*.registration.cpp \
         ${D}/*.a \
         -o ${D}/bench \
         -DHALIDE_NO_PNG -DHALIDE_NO_JPEG \
-        -ldl -lpthread
+        -ldl -lpthread \
+        -lpapi
 }
 
 # Benchmark one of the random samples

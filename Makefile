@@ -1687,7 +1687,7 @@ test_generator_gpu_multi_context_threaded:
 
 $(BUILD_DIR)/RunGenMain.o: $(ROOT_DIR)/tools/RunGenMain.cpp $(RUNTIME_EXPORTED_INCLUDES) $(ROOT_DIR)/tools/RunGen.h
 	@mkdir -p $(@D)
-	$(CXX) -c $< $(filter-out -g, $(TEST_CXX_FLAGS)) $(OPTIMIZE) -Os $(IMAGE_IO_CXX_FLAGS) -I$(INCLUDE_DIR) -I $(SRC_DIR)/runtime -I$(ROOT_DIR)/tools -o $@
+	$(CXX) -c $< $(filter-out -g, $(TEST_CXX_FLAGS)) $(OPTIMIZE) -Os $(IMAGE_IO_CXX_FLAGS) -I$(INCLUDE_DIR) -I $(SRC_DIR)/runtime -I$(ROOT_DIR)/tools -I/${PAPI_DIR}/include -L/${PAPI_DIR}/lib -o $@
 
 $(FILTERS_DIR)/%.registration.o: $(FILTERS_DIR)/%.registration.cpp
 	@mkdir -p $(@D)

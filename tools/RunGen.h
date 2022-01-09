@@ -16,6 +16,7 @@
 #include <utility>
 
 #include <vector>
+#include "papi.h"
 
 namespace Halide {
 namespace RunGen {
@@ -1281,11 +1282,20 @@ public:
         std::vector<void *> filter_argv = build_filter_argv();
 
         const auto benchmark_inner = [this, &filter_argv]() {
+            int papi_retval;
+            papi_retval = PAPI_hl_region_begin("computation");
+            if (papi_retval != PAPI_OK) {
+                std::cerr << "papi invoke error: PAPI_hl_region_begin\n";
+            }
             // Ignore result since our halide_error() should catch everything.
             (void)halide_argv_call(&filter_argv[0]);
             // Ensure that all outputs are finished, otherwise we may just be
             // measuring how long it takes to do a kernel launch for GPU code.
             this->device_sync_outputs();
+            papi_retval = PAPI_hl_region_end("computation");
+            if (papi_retval != PAPI_OK) {
+                std::cerr << "papi invoke error: PAPI_hl_region_begin\n";
+            }
         };
 
         info() << "Benchmarking filter...";
