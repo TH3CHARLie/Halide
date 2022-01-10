@@ -151,10 +151,11 @@ benchmark_sample() {
 
     # Add the runtime, pipeline id, and schedule id to the feature file
     R=$(cat ${D}/bench.txt | head -n1 | cut -d' ' -f8)
+    python3 /home/xuanda/dev/Halide/training_scripts/parse_runtime.py --input ${D}/bench.txt --output ${D}/runtimes.txt
     P=$3
     S=$2
     FNAME=$4
-    ${AUTOSCHED_BIN}/featurization_to_sample ${D}/${FNAME}.featurization $R $P $S ${D}/${FNAME}.sample || echo "featurization_to_sample failed for ${D} (probably because benchmarking failed)"
+    ${AUTOSCHED_BIN}/featurization_to_sample ${D}/${FNAME}.featurization ${D}/runtimes.txt $P $S ${D}/${FNAME}.sample || echo "featurization_to_sample failed for ${D} (probably because benchmarking failed)"
 }
 
 # Don't clobber existing samples

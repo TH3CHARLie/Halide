@@ -2,8 +2,9 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <vector>
 
-// A sample is a featurization + a runtime + some ids, all together in one file.
+// A sample is a featurization + a vector of per-stage runtimes + some ids, all together in one file.
 // This utility concats the runtime and ids onto a featurization to produce a sample.
 int main(int argc, char **argv) {
     if (argc != 6) {
@@ -25,13 +26,24 @@ int main(int argc, char **argv) {
 
     dst << src.rdbuf();
 
-    // Input runtime value is presumed to be in seconds,
-    // but sample file stores times in milliseconds.
-    float r = atof(argv[2]) * 1000.f;
+    std::ifstream runtime_file(argv[2]);
+    if (!runtime_file) {
+        std::cerr << "Unable to open runtime file: " << argv[2] << '\n';
+    }
+    std::vector<float> per_stage_runtimes;
+    std::string name;
+    float runtime;
+    while (runtime_file >> name >> runtime) {
+        per_stage_runtimes.push_back(runtime);
+    }
+    int size = per_stage_runtimes.size();
     int32_t pid = atoi(argv[3]);
     int32_t sid = atoi(argv[4]);
 
-    dst.write((const char *)&r, 4);
+    dst.write((const char *)&size, 4);
+    for (float r: runtimes) {
+        dst.write((const char *)&r, 4);
+    }
     dst.write((const char *)&pid, 4);
     dst.write((const char *)&sid, 4);
 
