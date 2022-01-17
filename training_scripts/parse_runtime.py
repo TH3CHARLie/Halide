@@ -18,7 +18,7 @@ def parse_runtime(infile):
     lines = [l.strip() for l in lines]
     runtimes = []
     lines = lines[2:]
-    for line in lines[4:]:
+    for line in lines[6:]:
         tokens = line.split()
         stage_name = tokens[1][:-1]
         stage_runtime = float(tokens[2][:-2])
