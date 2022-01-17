@@ -76,7 +76,7 @@ done
 
 # A batch of this many samples is built in parallel, and then
 # benchmarked serially.
-BATCH_SIZE=40
+BATCH_SIZE=1
 
 TIMEOUT_CMD="timeout"
 if [ $(uname -s) = "Darwin" ] && ! which $TIMEOUT_CMD 2>&1 >/dev/null; then
@@ -155,7 +155,9 @@ benchmark_sample() {
     P=$3
     S=$2
     FNAME=$4
-    ${AUTOSCHED_BIN}/featurization_to_sample ${D}/${FNAME}.featurization ${D}/runtimes.txt $P $S ${D}/${FNAME}.sample || echo "featurization_to_sample failed for ${D} (probably because benchmarking failed)"
+    DAG="/home/xuanda/dev/Halide/train_scripts/bilateral_DAG.txt"
+    O="/home/xuanda/dev/Halide/train_scripts/feature_ordering.txt"
+    ${AUTOSCHED_BIN}/featurization_to_sample ${D}/${FNAME}.featurization ${D}/runtimes.txt $DAG $O $P $S ${D}/${FNAME}.sample ${D}/${FNAME}.metadata || echo "featurization_to_sample failed for ${D} (probably because benchmarking failed)"
 }
 
 # Don't clobber existing samples

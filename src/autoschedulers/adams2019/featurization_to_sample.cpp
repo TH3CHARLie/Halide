@@ -114,8 +114,8 @@ std::vector<std::vector<int>> construct_inline_matrix(DAG& dag, const ProfilerRu
 }
 
 int main(int argc, char **argv) {
-    if (argc != 8) {
-        std::cout << "Usage: featurization_to_sample in.featurization runtime DAG ordering pipeline_id schedule_id out.sample\n";
+    if (argc != 9) {
+        std::cout << "Usage: featurization_to_sample in.featurization runtime DAG ordering pipeline_id schedule_id out.sample out.metadata\n";
         return -1;
     }
 
@@ -125,13 +125,19 @@ int main(int argc, char **argv) {
         return -1;
     }
 
-    std::ofstream dst(argv[5], std::ios::binary);
-    if (!dst) {
-        std::cerr << "Unable to open output file: " << argv[5] << "\n";
+    std::ofstream sample_dst(argv[7], std::ios::binary);
+    if (!sample_dst) {
+        std::cerr << "Unable to open sample output file: " << argv[7] << "\n";
         return -1;
     }
 
-    dst << src.rdbuf();
+    sample_dst << src.rdbuf();
+
+    std::ofstream metadata_dst(argv[8], std::ios::binary);
+    if (!metadata_dst) {
+        std::cerr << "Unable to open metadata output file: " << argv[8] << "\n";
+        return -1;
+    }
 
     auto profiler_runtimes = parse_profiler_runtimes(argv[2]);
     if (!profiler_runtimes) {
@@ -146,27 +152,30 @@ int main(int argc, char **argv) {
         return -1;
     }
     auto sorted_runtimes = sort_runtimes(*profiler_runtimes, *ordering);
-    int32_t pid = atoi(argv[3]);
-    int32_t sid = atoi(argv[4]);
-    int32_t runtime_size = sorted_runtimes.size();
-    dst.write((const char *)&runtime_size, 4);
-    for (float r: sorted_runtimes) {
-        dst.write((const char *)&r, 4);
-    }
+
     auto mat = construct_inline_matrix(*dag, *profiler_runtimes, *ordering);
+
+    int32_t pid = atoi(argv[5]);
+    int32_t sid = atoi(argv[6]);
+    metadata_dst.write((const char *)&pid, 4);
+    metadata_dst.write((const char *)&sid, 4);
+
+    int32_t runtime_size = sorted_runtimes.size();
     int32_t row = mat.size(), column = mat[0].size();
-    dst.write((const char*)&row, 4);
-    dst.write((const char*)&column, 4);
+    assert(runtime_size == row);
+    metadata_dst.write((const char*)&row, 4);
+    metadata_dst.write((const char*)&column, 4);
+    for (float r: sorted_runtimes) {
+        metadata_dst.write((const char *)&r, 4);
+    }
     for (int i = 0; i < row; ++i) {
         for (int j = 0; j < column; ++j) {
-            dst.write((const char*)&(mat[i][j]), 4);
+            metadata_dst.write((const char*)&(mat[i][j]), 4);
         }
     }
-    dst.write((const char *)&pid, 4);
-    dst.write((const char *)&sid, 4);
-
     src.close();
-    dst.close();
+    sample_dst.close();
+    metadata_dst.close();
 
     return 0;
 }
