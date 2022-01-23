@@ -72,8 +72,8 @@ std::vector<float> sort_runtimes(const ProfilerRuntimes& runtimes, const std::ve
     return sorted;
 }
 
-std::vector<std::vector<int>> construct_inline_matrix(DAG& dag, const ProfilerRuntimes& runtimes, const std::vector<std::string>& ordering) {
-    std::vector<std::vector<int>> mat(runtimes.size(), std::vector<int>(ordering.size()));
+std::vector<std::vector<int>> construct_transfrom_matrix(DAG& dag, const ProfilerRuntimes& runtimes, const std::vector<std::string>& ordering) {
+    std::vector<std::vector<int>> mat(ordering.size(), std::vector<int>(ordering.size()));
     std::map<std::string, int> sorted_runtime_names;
     std::map<std::string, int> sorted_ordering_names;
     int cnt = 0;
@@ -87,7 +87,7 @@ std::vector<std::vector<int>> construct_inline_matrix(DAG& dag, const ProfilerRu
     for (const auto& n: ordering) {
         sorted_ordering_names[n] = cnt++;
     }
-    for (int i = 0; i < ordering.size(); ++i) {
+    for (size_t i = 0; i < ordering.size(); ++i) {
         // this function is not inlined
         std::string name = ordering[i];
         if (runtimes.find(name) != runtimes.end()) {
@@ -153,7 +153,7 @@ int main(int argc, char **argv) {
     }
     auto sorted_runtimes = sort_runtimes(*profiler_runtimes, *ordering);
 
-    auto mat = construct_inline_matrix(*dag, *profiler_runtimes, *ordering);
+    auto mat = construct_transfrom_matrix(*dag, *profiler_runtimes, *ordering);
 
     int32_t pid = atoi(argv[5]);
     int32_t sid = atoi(argv[6]);
