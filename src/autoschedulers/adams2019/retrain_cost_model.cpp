@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <algorithm>
 
 #include "cmdline.h"
 
@@ -121,6 +122,8 @@ constexpr int kModels = 1;
 
 struct Sample {
     vector<float> runtimes;  // in msec
+    // vector<Buffer<float>> stage_runtimes;
+    // vector<Buffer<float>> transform_matrices;
     double prediction[kModels];
     string filename;
     int32_t schedule_id;
@@ -160,6 +163,11 @@ bool ends_with(const string &str, const string &suffix) {
     return true;
 }
 
+std::string replace_suffix(const std::string& path, const std::string& old_suffix, const std::string& new_suffix) {
+    std::string res = path.substr(0, path.find(old_suffix)) + new_suffix;
+    return res;
+}
+
 string leaf(const string &path) {
     size_t slash_pos = path.rfind('/');
 #ifdef _WIN32
@@ -194,6 +202,14 @@ void save_predictions(const map<int, PipelineSample> &samples, const string &fil
     std::cout << "Predictions saved to: " << filename << "\n";
 }
 
+std::vector<float> read_metadatafile(const std::string &filename) {
+    std::ifstream file(filename);
+    vector<float> scratch(10 * 1024 * 1024);
+    file.read((char *)(scratch.data()), scratch.size() * sizeof(float));
+    file.close();
+    return scratch;
+}
+
 // Load all the samples, reading filenames from stdin
 map<int, PipelineSample> load_samples(const Flags &flags) {
     map<int, PipelineSample> result;
@@ -205,19 +221,21 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
 
     size_t num_read = 0, num_unique = 0;
     while (!std::cin.eof()) {
-        string s;
-        std::cin >> s;
-        if (s.empty()) {
+        string sample_filename;
+        std::cin >> sample_filename;
+        if (sample_filename.empty()) {
             continue;
         }
-        if (!ends_with(s, ".sample")) {
-            std::cout << "Skipping file: " << s << "\n";
+        if (!ends_with(sample_filename, ".newsample")) {
+            std::cout << "Skipping file: " << sample_filename << "\n";
             continue;
         }
-        std::ifstream file(s);
+        std::string metadata_filename = replace_suffix(sample_filename, ".newsample", ".metadata");
+
+        std::ifstream file(sample_filename);
         file.read((char *)(scratch.data()), scratch.size() * sizeof(float));
         const size_t floats_read = file.gcount() / sizeof(float);
-        const size_t num_features = floats_read - 3;
+        const size_t num_features = floats_read - 2;
         const size_t features_per_stage = head2_w + (head1_w + 1) * head1_h;
         file.close();
         // Note we do not check file.fail(). The various failure cases
@@ -227,29 +245,40 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
         // out with a warning.
 
         if (floats_read == scratch.size()) {
-            std::cout << "Too-large sample: " << s << " " << floats_read << "\n";
+            std::cout << "Too-large sample: " << sample_filename << " " << floats_read << "\n";
             continue;
         }
         if (num_features % features_per_stage != 0) {
-            std::cout << "Truncated sample: " << s << " " << floats_read << "\n";
+            std::cout << "Truncated sample: " << sample_filename << " " << floats_read << "\n";
             continue;
         }
         const size_t num_stages = num_features / features_per_stage;
 
-        const float runtime = scratch[num_features];
+        int pipeline_id = *((int32_t *)(&scratch[num_features]));
+        const int schedule_id = *((int32_t *)(&scratch[num_features + 1]));
+
+        std::vector<float> metadata_scratch = read_metadatafile(metadata_filename);
+        const int runtime_size = *((int32_t *)(&metadata_scratch[0]));
+        const int ordering_size = *((int32_t *)(&metadata_scratch[1]));
+        std::vector<float> stage_runtimes;
+        for (int i = 0; i < runtime_size; ++i) {
+            stage_runtimes.push_back(metadata_scratch[2 + i]);
+        }
+        std::vector<float> transform_matrix;
+        for (int i = 0; i < ordering_size * ordering_size; ++i) {
+            transform_matrix.push_back(metadata_scratch[2 + runtime_size + i]);
+        }
+
+        const float runtime = std::accumulate(stage_runtimes.begin(), stage_runtimes.end(), 0.0f);
         if (runtime > 100000) {  // Don't try to predict runtime over 100s
             std::cout << "Implausible runtime in ms: " << runtime << "\n";
             continue;
         }
         // std::cout << "Runtime: " << runtime << "\n";
-
-        int pipeline_id = *((int32_t *)(&scratch[num_features + 1]));
-        const int schedule_id = *((int32_t *)(&scratch[num_features + 2]));
-
         if (runtime < best_runtime) {
             best_runtime = runtime;
             best = schedule_id;
-            best_path = s;
+            best_path = sample_filename;
         }
 
         PipelineSample &ps = result[pipeline_id];
@@ -289,7 +318,21 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
             if (runtime < best) {
                 it->second.runtimes.push_back(best);
                 it->second.runtimes[0] = runtime;
-                it->second.filename = s;
+                it->second.filename = sample_filename;
+                // Buffer<float> stage_runtime_buffer(runtime_size);
+                // for (int i = 0; i < runtime_size; ++i) {
+                //     stage_runtime_buffer(i) = stage_runtimes[i];
+                // }
+                // Buffer<float> transform_matrix_buffer(ordering_size, ordering_size);
+                //     for (int i = 0; i < ordering_size; ++i) {
+                //         for (int j = 0; j < ordering_size; ++i) {
+                //             transform_matrix_buffer(i, j) = transform_matrix[i * ordering_size + j];
+                //     }
+                // }
+                // it->second.stage_runtimes.push_back(it->second.stage_runtimes[0]);
+                // it->second.stage_runtimes[0] = stage_runtime_buffer;
+                // it->second.transform_matrices.push_back(it->second.transform_matrices[0]);
+                // it->second.transform_matrices[0] = transform_matrix_buffer;
             } else {
                 it->second.runtimes.push_back(runtime);
             }
@@ -299,13 +342,25 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
             }
         } else {
             Sample sample;
-            sample.filename = s;
+            sample.filename = sample_filename;
             sample.runtimes.push_back(runtime);
             for (double &d : sample.prediction) {
                 d = 0.0;
             }
             sample.schedule_id = schedule_id;
             sample.schedule_features = Buffer<float>(head2_w, num_stages);
+            // Buffer<float> stage_runtime_buffer(runtime_size);
+            // for (int i = 0; i < runtime_size; ++i) {
+            //     stage_runtime_buffer(i) = stage_runtimes[i];
+            // }
+            // Buffer<float> transform_matrix_buffer(ordering_size, ordering_size);
+            // for (int i = 0; i < ordering_size; ++i) {
+            //     for (int j = 0; j < ordering_size; ++i) {
+            //         transform_matrix_buffer(i, j) = transform_matrix[i * ordering_size + j];
+            //    }
+            // }
+            // sample.stage_runtimes.push_back(stage_runtime_buffer);
+            // sample.transform_matrices.push_back(transform_matrix_buffer);
 
             bool ok = true;
             for (size_t i = 0; i < num_stages; i++) {
@@ -351,7 +406,7 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
                 std::cerr << "Empty runtimes for schedule: " << p.first << "\n";
                 abort();
             }
-            std::cout << "Unique sample: " << leaf(p.second.filename) << " : " << p.second.runtimes[0] << "\n";
+            std::cout << "Unique sample: " << leaf(p.second.filename) << " : " << p.second.runtimes.size() << " " << p.second.runtimes[0] << "\n";
             if (p.second.runtimes.size() > 1) {
                 // Compute variance from samples
                 double mean = 0;
@@ -388,7 +443,7 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
     if (!flags.best_schedule_path.empty()) {
         // best_path points to a .sample file; look for a .schedule.h file in the same dir
         size_t dot = best_path.rfind('.');
-        assert(dot != string::npos && best_path.substr(dot) == ".sample");
+        assert(dot != string::npos && best_path.substr(dot) == ".newsample");
         string schedule_file = best_path.substr(0, dot) + ".schedule.h";
         std::ifstream src(schedule_file);
         std::ofstream dst(flags.best_schedule_path);

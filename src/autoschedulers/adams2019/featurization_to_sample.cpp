@@ -133,6 +133,11 @@ int main(int argc, char **argv) {
 
     sample_dst << src.rdbuf();
 
+    int32_t pid = atoi(argv[5]);
+    int32_t sid = atoi(argv[6]);
+    sample_dst.write((const char *)&pid, 4);
+    sample_dst.write((const char *)&sid, 4);
+
     std::ofstream metadata_dst(argv[8], std::ios::binary);
     if (!metadata_dst) {
         std::cerr << "Unable to open metadata output file: " << argv[8] << "\n";
@@ -155,16 +160,13 @@ int main(int argc, char **argv) {
 
     auto mat = construct_transfrom_matrix(*dag, *profiler_runtimes, *ordering);
 
-    int32_t pid = atoi(argv[5]);
-    int32_t sid = atoi(argv[6]);
-    metadata_dst.write((const char *)&pid, 4);
-    metadata_dst.write((const char *)&sid, 4);
-
     int32_t runtime_size = sorted_runtimes.size();
     int32_t row = mat.size(), column = mat[0].size();
-    assert(runtime_size == row);
-    metadata_dst.write((const char*)&row, 4);
-    metadata_dst.write((const char*)&column, 4);
+    int32_t ordering_size = ordering->size();
+    assert(row == ordering_size && column == ordering_size);
+    metadata_dst.write((const char*)&runtime_size, 4);
+    metadata_dst.write((const char*)&ordering_size, 4);
+    // per-stage runtimes are already milliseconds
     for (float r: sorted_runtimes) {
         metadata_dst.write((const char *)&r, 4);
     }

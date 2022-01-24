@@ -22,7 +22,6 @@ echo "Number of epochs: ${NUM_EPOCHS}"
 
 NUM_CORES=20
 
-WEIGHTS_OUTFILE="${SAMPLES_DIR}/updated_back.weights"
 cat ${SAMPLE_FILE} | \
     ${AUTOSCHED_BIN}/retrain_cost_model \
         --epochs=${NUM_EPOCHS} \
