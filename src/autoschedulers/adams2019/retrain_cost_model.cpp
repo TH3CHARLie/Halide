@@ -122,8 +122,8 @@ constexpr int kModels = 1;
 
 struct Sample {
     vector<float> runtimes;  // in msec
-    // vector<Buffer<float>> stage_runtimes;
-    // vector<Buffer<float>> transform_matrices;
+    vector<vector<float>> stage_runtimes;
+    vector<vector<float>> transform_matrices;
     double prediction[kModels];
     string filename;
     int32_t schedule_id;
@@ -319,20 +319,24 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
                 it->second.runtimes.push_back(best);
                 it->second.runtimes[0] = runtime;
                 it->second.filename = sample_filename;
-                // Buffer<float> stage_runtime_buffer(runtime_size);
-                // for (int i = 0; i < runtime_size; ++i) {
-                //     stage_runtime_buffer(i) = stage_runtimes[i];
-                // }
-                // Buffer<float> transform_matrix_buffer(ordering_size, ordering_size);
-                //     for (int i = 0; i < ordering_size; ++i) {
-                //         for (int j = 0; j < ordering_size; ++i) {
-                //             transform_matrix_buffer(i, j) = transform_matrix[i * ordering_size + j];
-                //     }
-                // }
-                // it->second.stage_runtimes.push_back(it->second.stage_runtimes[0]);
-                // it->second.stage_runtimes[0] = stage_runtime_buffer;
-                // it->second.transform_matrices.push_back(it->second.transform_matrices[0]);
-                // it->second.transform_matrices[0] = transform_matrix_buffer;
+                vector<float> stage_runtime_buffer;
+                for (int i = 0; i < ordering_size; ++i) {
+                    if (i < runtime_size) {
+                        stage_runtime_buffer.push_back(stage_runtimes[i]);
+                    } else {
+                        stage_runtime_buffer.push_back(0.0f);
+                    }
+                }
+                vector<float> transform_matrix_buffer;
+                for (int i = 0; i < ordering_size; ++i) {
+                    for (int j = 0; j < ordering_size; ++j) {
+                            transform_matrix_buffer.push_back(transform_matrix[i * ordering_size + j]);
+                    }
+                }
+                it->second.stage_runtimes.push_back(it->second.stage_runtimes[0]);
+                it->second.stage_runtimes[0] = stage_runtime_buffer;
+                it->second.transform_matrices.push_back(it->second.transform_matrices[0]);
+                it->second.transform_matrices[0] = transform_matrix_buffer;
             } else {
                 it->second.runtimes.push_back(runtime);
             }
@@ -349,18 +353,22 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
             }
             sample.schedule_id = schedule_id;
             sample.schedule_features = Buffer<float>(head2_w, num_stages);
-            // Buffer<float> stage_runtime_buffer(runtime_size);
-            // for (int i = 0; i < runtime_size; ++i) {
-            //     stage_runtime_buffer(i) = stage_runtimes[i];
-            // }
-            // Buffer<float> transform_matrix_buffer(ordering_size, ordering_size);
-            // for (int i = 0; i < ordering_size; ++i) {
-            //     for (int j = 0; j < ordering_size; ++i) {
-            //         transform_matrix_buffer(i, j) = transform_matrix[i * ordering_size + j];
-            //    }
-            // }
-            // sample.stage_runtimes.push_back(stage_runtime_buffer);
-            // sample.transform_matrices.push_back(transform_matrix_buffer);
+            vector<float> stage_runtime_buffer;
+            for (int i = 0; i < ordering_size; ++i) {
+                if (i < runtime_size) {
+                    stage_runtime_buffer.push_back(stage_runtimes[i]);
+                } else {
+                    stage_runtime_buffer.push_back(0.0f);
+                }
+            }
+            vector<float> transform_matrix_buffer;
+            for (int i = 0; i < ordering_size; ++i) {
+                for (int j = 0; j < ordering_size; ++j) {
+                        transform_matrix_buffer.push_back(transform_matrix[i * ordering_size + j]);
+                }
+            }
+            sample.stage_runtimes.push_back(stage_runtime_buffer);
+            sample.transform_matrices.push_back(transform_matrix_buffer);
 
             bool ok = true;
             for (size_t i = 0; i < num_stages; i++) {
@@ -457,6 +465,9 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
 
 }  // namespace
 
+// TODO: fix this constant
+const int ordering_size = 9;
+
 int main(int argc, char **argv) {
     Flags flags(argc, argv);
 
@@ -541,7 +552,8 @@ int main(int argc, char **argv) {
                         size_t batch_size = std::min((size_t)1024, p.second.schedules.size());
                         size_t fastest_idx = 0;
                         Halide::Runtime::Buffer<float> runtimes(batch_size);
-
+                        Halide::Runtime::Buffer<float> stage_runtimes(batch_size, ordering_size);
+                        Halide::Runtime::Buffer<float> transfrom_matrices(batch_size, ordering_size * ordering_size);
                         size_t first = 0;
                         // if (p.second.schedules.size() > 1024) {
                         //     first = rng() % (p.second.schedules.size() - 1024);
@@ -554,6 +566,12 @@ int main(int argc, char **argv) {
                             Halide::Runtime::Buffer<float> buf;
                             tp->enqueue(p.second.num_stages, &buf, &sched.prediction[model]);
                             runtimes(j) = sched.runtimes[0];
+                            for (size_t k = 0; k < ordering_size; ++k) {
+                                stage_runtimes(j, k) = sched.stage_runtimes[0][k];
+                            }
+                            for (size_t k = 0; k < ordering_size * ordering_size; ++k) {
+                                transfrom_matrices(j, k) = sched.transform_matrices[0][k];
+                            }
                             if (runtimes(j) < runtimes(fastest_idx)) {
                                 fastest_idx = j;
                             }

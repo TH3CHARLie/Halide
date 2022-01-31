@@ -1,10 +1,13 @@
 import sys
 
 def transform(filename, outfile):
+    lines = []
     with open(filename, "r") as f:
-        with open(outfile, "w") as o:
-            for line in f:
-                newline = line.replace('.sample', '.newsample')
+        for line in f:
+            newline = line.replace('.sample', '.newsample')
+            lines.append(newline)
+    with open(outfile, "w") as o:
+        for newline in lines:
                 o.write(newline)
 
 
