@@ -170,7 +170,8 @@ void DefaultCostModel::enqueue(int ns, Runtime::Buffer<float> *schedule_feats, d
 // 0) is the new weight, buf(_, 1) is the ADAM running average of
 // the first moment, and buf(_, 2) is the ADAM running average of
 // the second moment.
-float DefaultCostModel::backprop(const Runtime::Buffer<const float> &true_runtimes, float learning_rate) {
+float DefaultCostModel::backprop(const Runtime::Buffer<const float> &true_runtimes, const Runtime::Buffer<const float> &stage_runtimes,
+                                 const Runtime::Buffer<const float> &transform_matrices, float learning_rate) {
     internal_assert(cursor != 0);
     internal_assert(pipeline_feat_queue.data());
     internal_assert(schedule_feat_queue.data());
@@ -218,6 +219,8 @@ float DefaultCostModel::backprop(const Runtime::Buffer<const float> &true_runtim
                                   learning_rate, timestep++,
                                   fastest_idx,
                                   true_runtimes.alias(),
+                                  stage_runtimes.alias(),
+                                  transform_matrices.alias(),
                                   head1_filter_update, head1_bias_update,
                                   head2_filter_update, head2_bias_update,
                                   conv1_filter_update, conv1_bias_update,
@@ -287,7 +290,7 @@ void DefaultCostModel::evaluate_costs() {
                             weights.head1_filter, weights.head1_bias,
                             weights.head2_filter, weights.head2_bias,
                             weights.conv1_filter, weights.conv1_bias,
-                            0.0f, 0, 0, nullptr,
+                            0.0f, 0, 0, nullptr, nullptr, nullptr,
                             dst, loss);
     (void)result;
     internal_assert(result == 0);

@@ -581,7 +581,7 @@ int main(int argc, char **argv) {
 
                         float loss = 0.0f;
                         if (train & !predict_only) {
-                            loss = tp->backprop(runtimes, learning_rate);
+                            loss = tp->backprop(runtimes, stage_runtimes, transfrom_matrices, learning_rate);
                             assert(!std::isnan(loss));
                             loss_sum[model] += loss;
                             loss_sum_counter[model]++;

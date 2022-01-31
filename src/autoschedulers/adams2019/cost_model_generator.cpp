@@ -164,6 +164,12 @@ public:
     // The true runtimes obtained by benchmarking.
     Input<Buffer<float>> true_runtime{"true_runtime", 1};
 
+    // The true per-stage runtimes obtained by profiling
+    Input<Buffer<float>> stage_runtimes{"stage_runtimes", 1};
+
+    // The tranform matrices for handling mismatch caused by inlining
+    Input<Buffer<float>> transform_matrices{"transform_matrices", 1};
+
     // The predicted runtimes
     Output<Buffer<float>> prediction_output{"prediction_output", 1};
 
@@ -400,6 +406,7 @@ public:
         Func prediction;
         RDom r_reduce(0, num_stages);
         prediction(n) += runtime_per_stage(n, r_reduce);
+        // matrix multiplication with DAG produced relation matrix
 
         prediction_output(n) = prediction(n);
 
