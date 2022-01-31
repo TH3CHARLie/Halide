@@ -125,6 +125,8 @@ struct Sample {
     vector<vector<float>> stage_runtimes;
     vector<vector<float>> transform_matrices;
     double prediction[kModels];
+    // TODO: adapt for kModels
+    vector<double> stage_predictions;
     string filename;
     int32_t schedule_id;
     Buffer<float> schedule_features;
@@ -472,6 +474,7 @@ int main(int argc, char **argv) {
     Flags flags(argc, argv);
 
     auto samples = load_samples(flags);
+    std::cout << "Sample loading finished" << std::endl;
     bool predict_only = flags.predict_only;
 
     // Iterate through the pipelines
@@ -510,6 +513,7 @@ int main(int argc, char **argv) {
 
     std::cout << "Number of unique schedules: " << unique_schedules << "\n";
 
+    std::cout << "Start training" << std::endl;
     for (float learning_rate : flags.rates) {
         float loss_sum[kModels] = {0}, loss_sum_counter[kModels] = {0};
         float correct_ordering_rate_sum[kModels] = {0};
@@ -553,12 +557,12 @@ int main(int argc, char **argv) {
                         size_t fastest_idx = 0;
                         Halide::Runtime::Buffer<float> runtimes(batch_size);
                         Halide::Runtime::Buffer<float> stage_runtimes(batch_size, ordering_size);
-                        Halide::Runtime::Buffer<float> transfrom_matrices(batch_size, ordering_size * ordering_size);
+                        Halide::Runtime::Buffer<float> transfrom_matrices(batch_size, ordering_size, ordering_size);
                         size_t first = 0;
                         // if (p.second.schedules.size() > 1024) {
                         //     first = rng() % (p.second.schedules.size() - 1024);
                         // }
-
+                        Halide::Runtime::Buffer<float> stage_predictions(batch_size, ordering_size);
                         auto it = p.second.schedules.begin();
                         std::advance(it, first);
                         for (size_t j = 0; j < batch_size; j++) {
@@ -569,8 +573,10 @@ int main(int argc, char **argv) {
                             for (size_t k = 0; k < ordering_size; ++k) {
                                 stage_runtimes(j, k) = sched.stage_runtimes[0][k];
                             }
-                            for (size_t k = 0; k < ordering_size * ordering_size; ++k) {
-                                transfrom_matrices(j, k) = sched.transform_matrices[0][k];
+                            for (size_t k = 0; k < ordering_size; ++k) {
+                                for (size_t l = 0; l < ordering_size; ++l) {
+                                    transfrom_matrices(j, k, l) = sched.transform_matrices[0][k * ordering_size + l];
+                                }
                             }
                             if (runtimes(j) < runtimes(fastest_idx)) {
                                 fastest_idx = j;
@@ -581,7 +587,7 @@ int main(int argc, char **argv) {
 
                         float loss = 0.0f;
                         if (train & !predict_only) {
-                            loss = tp->backprop(runtimes, stage_runtimes, transfrom_matrices, learning_rate);
+                            loss = tp->backprop(runtimes, stage_runtimes, transfrom_matrices, stage_predictions, learning_rate);
                             assert(!std::isnan(loss));
                             loss_sum[model] += loss;
                             loss_sum_counter[model]++;

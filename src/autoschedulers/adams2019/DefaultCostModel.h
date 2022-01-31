@@ -50,12 +50,14 @@ public:
     // Evaluate all schedules in the queue.
     void evaluate_costs() override;
 
+    void evaluate_costs_with_stage_runtimes(Runtime::Buffer<float> &stage_predictions);
+
     // Discard all schedules in the queue.
     void reset() override;
 
     // Update model weights using true measured runtimes.
     float backprop(const Runtime::Buffer<const float> &true_runtimes, const Runtime::Buffer<const float> &stage_runtimes,
-                   const Runtime::Buffer<const float> &transform_matrices, float learning_rate);
+                   const Runtime::Buffer<const float> &transform_matrices, Runtime::Buffer<float> &stage_predictions, float learning_rate);
 
     // Save/Load the model weights to/from disk.
     void save_weights();
