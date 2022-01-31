@@ -50,7 +50,7 @@ if [ ! -v HL_TARGET ]; then
     get_host_target ${HALIDE_ROOT} HL_TARGET
 fi
 
-export HL_TARGET=${HL_TARGET}
+export HL_TARGET=${HL_TARGET}-profile
 
 echo "HL_TARGET set to ${HL_TARGET}"
 
