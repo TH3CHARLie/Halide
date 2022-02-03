@@ -419,7 +419,11 @@ public:
         // TODO: fix invalid access
         stage_predictions_output = runtime_per_stage;
         // TODO: apply the transform how?
-        transformed_stage_predictions_output = runtime_per_stage;
+        // transformed_stage_predictions_output = runtime_per_stage;
+        RDom r_matmul(0, num_stages);
+        for (int i = 0; i < 9; ++i) {
+            transformed_stage_predictions_output(n, w) += runtime_per_stage(n, i) * transform_matrices(n, r_matmul, i);
+        }
         Func err;
         Func per_stage_err;
 
@@ -505,6 +509,7 @@ public:
         num_stages.set_estimate(13);
         prediction_output.set_estimates({{0, 80}});
         stage_predictions_output.set_estimates({{0, 80}, {0, 13}});
+        transformed_stage_predictions_output.set_estimates({{0, 80}, {0, 13}});
         learning_rate.set_estimate(0.001f);
         timestep.set_estimate(37);
         pipeline_features.set_estimates({{0, head1_w}, {0, head1_h}, {0, 13}});
