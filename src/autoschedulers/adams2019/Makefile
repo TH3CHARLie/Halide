@@ -52,7 +52,7 @@ $(BIN)/auto_schedule_runtime.a: $(BIN)/cost_model.generator
 
 $(BIN)/cost_model/%.a: $(BIN)/cost_model.generator
 	@mkdir -p $(@D)
-	$^ -g $* -o $(BIN)/cost_model -f $* target=$(HL_TARGET)-no_runtime auto_schedule=false -e stmt,static_library,h,assembly
+	$^ -g $* -o $(BIN)/cost_model -f $* target=$(HL_TARGET)-no_runtime auto_schedule=true -p $(BIN)/libautoschedule_adams2019.$(SHARED_EXT) -s Adams2019 -t 0 -e stmt,static_library,h,assembly
 
 # It's important to use dynamic lookups for undefined symbols here: all of libHalide
 # is expected to be present (in the loading binary), so we explicitly make the symbols

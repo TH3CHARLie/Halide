@@ -176,6 +176,9 @@ public:
     // The predicted pre-stage runtimes
     Output<Buffer<float>> stage_predictions_output{"stage_predictions_output", 2};
 
+    // The transformed per-stage runtimes
+    Output<Buffer<float>> transformed_stage_predictions_output{"transformed_stage_predictions_output", 2};
+
     // The loss. L2 on relative throughput.
     Output<Buffer<float>> loss_output{"loss_output", 0};
 
@@ -413,9 +416,12 @@ public:
 
         prediction_output(n) = prediction(n);
 
+        // TODO: fix invalid access
         stage_predictions_output = runtime_per_stage;
-
+        // TODO: apply the transform how?
+        transformed_stage_predictions_output = runtime_per_stage;
         Func err;
+        Func per_stage_err;
 
         if (!training) {
             loss_output() = 0.0f;
@@ -445,14 +451,25 @@ public:
             Expr p1 = prediction(n) * scale;
             Expr r1 = true_runtime(n) * scale;
 
+            Expr per_stage_scale = 1.0f / stage_runtimes(n2, w);
+            Expr per_stage_p1 = transformed_stage_predictions_output(n, w) * per_stage_scale;
+            Expr per_stage_r1 = stage_runtimes(n, w) * per_stage_scale;
+
+            RDom r_per_stage(0, batch_size, 0, num_stages);
+
             // Invert them to get relative throughput, and compute L2 loss.
             Expr delta = pow(1.0f / max(p1, 1e-10f) - 1.0f / r1, 2);
+
+            Expr stage_delta = pow(1.0f / max(per_stage_p1, 1e-10f) - 1.0f / per_stage_r1, 2);
 
             // Add the regulization with a small weight.
             err(n) = delta + 1e-5f * regularize;
 
+            per_stage_err(n) = stage_delta + 1e-5f * regularize;
+
             // Sum the errors over the batch.
             Expr loss = sum(err(r_batch));
+            Expr per_stage_loss = sum(per_stage_err(r_per_stage));
 
             loss_output() = loss;
 
@@ -487,6 +504,7 @@ public:
         batch_size.set_estimate(80);
         num_stages.set_estimate(13);
         prediction_output.set_estimates({{0, 80}});
+        stage_predictions_output.set_estimates({{0, 80}, {0, 13}});
         learning_rate.set_estimate(0.001f);
         timestep.set_estimate(37);
         pipeline_features.set_estimates({{0, head1_w}, {0, head1_h}, {0, 13}});
@@ -494,77 +512,77 @@ public:
         true_runtime.set_estimates({{0, 80}});
 
         // SCHEDULE
-        // if (training && !auto_schedule) {
-        //     do_cost_model_schedule(get_pipeline());
-        // } else if (auto_schedule) {
-        //     // Do nothing.
-        // } else {
-        //     // We just write down a good schedule for
-        //     // inference. Scheduling a couple of convs is easy.
-        //     Var no;
-        //     prediction_output.specialize(batch_size < 8).split(n, no, n, 1);
-        //     prediction_output.compute_root().split(n, no, n, 8).parallel(no);
-        //     prediction_output.bound(n, 0, batch_size);
+        if (training && !auto_schedule) {
+            do_cost_model_schedule(get_pipeline());
+        } else if (auto_schedule) {
+            // Do nothing.
+        } else {
+            // We just write down a good schedule for
+            // inference. Scheduling a couple of convs is easy.
+            Var no;
+            prediction_output.specialize(batch_size < 8).split(n, no, n, 1);
+            prediction_output.compute_root().split(n, no, n, 8).parallel(no);
+            prediction_output.bound(n, 0, batch_size);
 
-        //     // schedule for the forwards path
-        //     const int vec = 8;
+            // schedule for the forwards path
+            const int vec = 8;
 
-        //     // A helper function for scheduling conv layers
-        //     auto schedule_conv = [&](Func conv, Func relu, const RVar &r_channels) {
-        //         Var ci, wi;
-        //         if (!training) {
-        //             relu
-        //                 .compute_at(prediction_output, n)
-        //                 .store_at(prediction_output, no)
-        //                 .tile(c, w, ci, wi, vec, 4, TailStrategy::RoundUp)
-        //                 .vectorize(ci);
-        //             conv.compute_at(relu, c);
-        //         } else {
-        //             // In training mode, we need the conv activations pre-relu too
-        //             conv.in()
-        //                 .compute_root()
-        //                 .tile(c, w, ci, wi, vec, 1, TailStrategy::RoundUp)
-        //                 .vectorize(ci)
-        //                 .unroll(wi)
-        //                 .parallel(n, 8);
-        //             conv.compute_at(conv.in(), c);
-        //             relu
-        //                 .compute_root()
-        //                 .reorder_storage(c, w, n)
-        //                 .reorder(c, w, n)
-        //                 .vectorize(c, vec)
-        //                 .parallel(n, 8);
-        //         }
-        //         conv
-        //             .vectorize(c)
-        //             .unroll(w)
-        //             .update()
-        //             .vectorize(c)
-        //             .unroll(w)
-        //             .reorder(c, w, r_channels);
-        //     };
+            // A helper function for scheduling conv layers
+            auto schedule_conv = [&](Func conv, Func relu, const RVar &r_channels) {
+                Var ci, wi;
+                if (!training) {
+                    relu
+                        .compute_at(prediction_output, n)
+                        .store_at(prediction_output, no)
+                        .tile(c, w, ci, wi, vec, 4, TailStrategy::RoundUp)
+                        .vectorize(ci);
+                    conv.compute_at(relu, c);
+                } else {
+                    // In training mode, we need the conv activations pre-relu too
+                    conv.in()
+                        .compute_root()
+                        .tile(c, w, ci, wi, vec, 1, TailStrategy::RoundUp)
+                        .vectorize(ci)
+                        .unroll(wi)
+                        .parallel(n, 8);
+                    conv.compute_at(conv.in(), c);
+                    relu
+                        .compute_root()
+                        .reorder_storage(c, w, n)
+                        .reorder(c, w, n)
+                        .vectorize(c, vec)
+                        .parallel(n, 8);
+                }
+                conv
+                    .vectorize(c)
+                    .unroll(w)
+                    .update()
+                    .vectorize(c)
+                    .unroll(w)
+                    .reorder(c, w, r_channels);
+            };
 
-        //     // Pipeline features processing
-        //     conv1_stage1.compute_root().vectorize(c);
-        //     squashed_head1_filter.compute_root().vectorize(c);
+            // Pipeline features processing
+            conv1_stage1.compute_root().vectorize(c);
+            squashed_head1_filter.compute_root().vectorize(c);
 
-        //     // Schedule features processing. The number of schedule
-        //     // features is not close to a multiple of 8, so vectorized
-        //     // across the batch.
-        //     if (!training) {
-        //         normalized_schedule_features
-        //             .compute_at(prediction_output, no)
-        //             .vectorize(n);
-        //     } else {
-        //         normalized_schedule_features
-        //             .compute_root()
-        //             .vectorize(n, 8);
-        //     }
+            // Schedule features processing. The number of schedule
+            // features is not close to a multiple of 8, so vectorized
+            // across the batch.
+            if (!training) {
+                normalized_schedule_features
+                    .compute_at(prediction_output, no)
+                    .vectorize(n);
+            } else {
+                normalized_schedule_features
+                    .compute_root()
+                    .vectorize(n, 8);
+            }
 
-        //     // conv+relu layers
-        //     schedule_conv(head2_conv, head2_relu, r_head2.x);
-        //     schedule_conv(conv1_stage2, relu1, r1_stage2.x);
-        // }
+            // conv+relu layers
+            schedule_conv(head2_conv, head2_relu, r_head2.x);
+            schedule_conv(conv1_stage2, relu1, r1_stage2.x);
+        }
     }
 };
 

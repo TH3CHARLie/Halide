@@ -605,7 +605,10 @@ int main(int argc, char **argv) {
                                 it++;
                             }
                         } else {
-                            tp->evaluate_costs();
+                            Halide::Runtime::Buffer<float> stage_predictions_output(batch_size, ordering_size);
+                            Halide::Runtime::Buffer<float> transformed_stage_predictions_output(batch_size, ordering_size);
+                            tp->evaluate_costs_with_stage_runtimes(stage_predictions_output, transformed_stage_predictions_output);
+                            // tp->evaluate_costs();
                         }
 
                         if (true) {
