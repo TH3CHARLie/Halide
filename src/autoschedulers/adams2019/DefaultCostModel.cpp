@@ -171,7 +171,8 @@ void DefaultCostModel::enqueue(int ns, Runtime::Buffer<float> *schedule_feats, d
 // the first moment, and buf(_, 2) is the ADAM running average of
 // the second moment.
 float DefaultCostModel::backprop(const Runtime::Buffer<const float> &true_runtimes, const Runtime::Buffer<const float> &stage_runtimes,
-                                 const Runtime::Buffer<const float> &transform_matrices, Runtime::Buffer<float> &stage_predictions, float learning_rate) {
+                                 const Runtime::Buffer<const float> &transform_matrices, Runtime::Buffer<float> &stage_predictions,
+                                 Runtime::Buffer<float> &transformed_stage_predictions, float learning_rate) {
     internal_assert(cursor != 0);
     internal_assert(pipeline_feat_queue.data());
     internal_assert(schedule_feat_queue.data());
@@ -226,6 +227,7 @@ float DefaultCostModel::backprop(const Runtime::Buffer<const float> &true_runtim
                                   conv1_filter_update, conv1_bias_update,
                                   dst,
                                   stage_predictions,
+                                  transformed_stage_predictions,
                                   loss);
     (void)result;
     internal_assert(result == 0);

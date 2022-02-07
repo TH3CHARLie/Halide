@@ -27,7 +27,7 @@ using std::vector;
 
 struct Flags {
     int epochs = 0;
-    std::vector<float> rates = {0.0001f};
+    std::vector<float> rates = {0.1f};
     string initial_weights_path;
     string weights_out_path;
     int num_cores = 32;
@@ -557,6 +557,7 @@ int main(int argc, char **argv) {
                         size_t fastest_idx = 0;
                         Halide::Runtime::Buffer<float> runtimes(batch_size);
                         Halide::Runtime::Buffer<float> stage_runtimes(batch_size, ordering_size);
+                        Halide::Runtime::Buffer<float> transformed_stage_runtimes(batch_size, ordering_size);
                         Halide::Runtime::Buffer<float> transfrom_matrices(batch_size, ordering_size, ordering_size);
                         size_t first = 0;
                         // if (p.second.schedules.size() > 1024) {
@@ -587,7 +588,7 @@ int main(int argc, char **argv) {
 
                         float loss = 0.0f;
                         if (train & !predict_only) {
-                            loss = tp->backprop(runtimes, stage_runtimes, transfrom_matrices, stage_predictions, learning_rate);
+                            loss = tp->backprop(runtimes, stage_runtimes, transfrom_matrices, stage_predictions, transformed_stage_runtimes, learning_rate);
                             assert(!std::isnan(loss));
                             loss_sum[model] += loss;
                             loss_sum_counter[model]++;

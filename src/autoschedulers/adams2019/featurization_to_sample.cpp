@@ -110,7 +110,13 @@ std::vector<std::vector<int>> construct_transfrom_matrix(DAG& dag, const Profile
             }
         }
     }
-    return mat;
+    std::vector<std::vector<int>> transposed(ordering.size(), std::vector<int>(ordering.size()));
+    for (size_t i = 0; i < ordering.size(); ++i) {
+        for (size_t j = 0; j < ordering.size(); ++j) {
+            transposed[i][j] = mat[j][i];
+        }
+    }
+    return transposed;
 }
 
 int main(int argc, char **argv) {

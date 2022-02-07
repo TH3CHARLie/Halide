@@ -57,8 +57,7 @@ public:
 
     // Update model weights using true measured runtimes.
     float backprop(const Runtime::Buffer<const float> &true_runtimes, const Runtime::Buffer<const float> &stage_runtimes,
-                   const Runtime::Buffer<const float> &transform_matrices, Runtime::Buffer<float> &stage_predictions, float learning_rate);
-
+                                 const Runtime::Buffer<const float> &transform_matrices, Runtime::Buffer<float> &stage_predictions, Runtime::Buffer<float> &transformed_stage_predictions, float learning_rate);
     // Save/Load the model weights to/from disk.
     void save_weights();
     void load_weights();

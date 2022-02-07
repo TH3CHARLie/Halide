@@ -416,14 +416,9 @@ public:
 
         prediction_output(n) = prediction(n);
 
-        // TODO: fix invalid access
         stage_predictions_output = runtime_per_stage;
-        // TODO: apply the transform how?
-        // transformed_stage_predictions_output = runtime_per_stage;
         RDom r_matmul(0, num_stages);
-        for (int i = 0; i < 9; ++i) {
-            transformed_stage_predictions_output(n, w) += runtime_per_stage(n, i) * transform_matrices(n, r_matmul, i);
-        }
+        transformed_stage_predictions_output(n, w) += runtime_per_stage(n, r_matmul) * transform_matrices(n, r_matmul, w);
         Func err;
         Func per_stage_err;
 
@@ -456,26 +451,29 @@ public:
             Expr r1 = true_runtime(n) * scale;
 
             Expr per_stage_scale = 1.0f / stage_runtimes(n2, w);
-            Expr per_stage_p1 = transformed_stage_predictions_output(n, w) * per_stage_scale;
-            Expr per_stage_r1 = stage_runtimes(n, w) * per_stage_scale;
+            // per_stage_scale leads to 0 in divison, so use the E2E scale here
+            Expr per_stage_p1 = transformed_stage_predictions_output(n, w) * scale;
+
+            Expr per_stage_r1 = stage_runtimes(n, w) * scale;
 
             RDom r_per_stage(0, batch_size, 0, num_stages);
 
             // Invert them to get relative throughput, and compute L2 loss.
             Expr delta = pow(1.0f / max(p1, 1e-10f) - 1.0f / r1, 2);
 
-            Expr stage_delta = pow(1.0f / max(per_stage_p1, 1e-10f) - 1.0f / per_stage_r1, 2);
-
+            // Expr stage_delta = pow(1.0f / max(per_stage_p1, 1e-10f) - 1.0f / max(per_stage_r1, 1e-10f), 2);
+            Expr stage_delta = pow(per_stage_p1 - per_stage_r1, 2);
+            // Expr stage_delta = pow(runtime_per_stage(n, w) - stage_runtimes(n, w), 2);
             // Add the regulization with a small weight.
             err(n) = delta + 1e-5f * regularize;
 
-            per_stage_err(n) = stage_delta + 1e-5f * regularize;
+            per_stage_err(n, w) = stage_delta + 1e-5f * regularize;
 
             // Sum the errors over the batch.
             Expr loss = sum(err(r_batch));
-            Expr per_stage_loss = sum(per_stage_err(r_per_stage));
+            Expr per_stage_loss = sum(per_stage_err(r_per_stage.x, r_per_stage.y));
 
-            loss_output() = loss;
+            loss_output() = per_stage_loss;
 
             // Compute derivatives of the loss, and backpropagate them
             // to the model weights.
@@ -515,6 +513,8 @@ public:
         pipeline_features.set_estimates({{0, head1_w}, {0, head1_h}, {0, 13}});
         schedule_features.set_estimates({{0, 80}, {0, head2_w}, {0, 13}});
         true_runtime.set_estimates({{0, 80}});
+        stage_runtimes.set_estimates({{0, 80}, {0, 13}});
+        transform_matrices.set_estimates({{0, 80}, {0, 13}, {0, 13}});
 
         // SCHEDULE
         if (training && !auto_schedule) {
