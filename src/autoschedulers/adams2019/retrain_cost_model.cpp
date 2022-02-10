@@ -266,9 +266,9 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
         for (int i = 0; i < runtime_size; ++i) {
             stage_runtimes.push_back(metadata_scratch[2 + i]);
         }
-        std::vector<float> transform_matrix;
+        std::vector<int> transform_matrix;
         for (int i = 0; i < ordering_size * ordering_size; ++i) {
-            transform_matrix.push_back(metadata_scratch[2 + runtime_size + i]);
+            transform_matrix.push_back(*((int32_t *)(&metadata_scratch[2 + runtime_size + i])));
         }
 
         const float runtime = std::accumulate(stage_runtimes.begin(), stage_runtimes.end(), 0.0f);
@@ -558,7 +558,7 @@ int main(int argc, char **argv) {
                         Halide::Runtime::Buffer<float> runtimes(batch_size);
                         Halide::Runtime::Buffer<float> stage_runtimes(batch_size, ordering_size);
                         Halide::Runtime::Buffer<float> transformed_stage_runtimes(batch_size, ordering_size);
-                        Halide::Runtime::Buffer<float> transfrom_matrices(batch_size, ordering_size, ordering_size);
+                        Halide::Runtime::Buffer<float> transform_matrices(batch_size, ordering_size, ordering_size);
                         size_t first = 0;
                         // if (p.second.schedules.size() > 1024) {
                         //     first = rng() % (p.second.schedules.size() - 1024);
@@ -576,7 +576,7 @@ int main(int argc, char **argv) {
                             }
                             for (size_t k = 0; k < ordering_size; ++k) {
                                 for (size_t l = 0; l < ordering_size; ++l) {
-                                    transfrom_matrices(j, k, l) = sched.transform_matrices[0][k * ordering_size + l];
+                                    transform_matrices(j, k, l) = sched.transform_matrices[0][k * ordering_size + l];
                                 }
                             }
                             if (runtimes(j) < runtimes(fastest_idx)) {
@@ -588,7 +588,7 @@ int main(int argc, char **argv) {
 
                         float loss = 0.0f;
                         if (train & !predict_only) {
-                            loss = tp->backprop(runtimes, stage_runtimes, transfrom_matrices, stage_predictions, transformed_stage_runtimes, learning_rate);
+                            loss = tp->backprop(runtimes, stage_runtimes, transform_matrices, stage_predictions, transformed_stage_runtimes, learning_rate);
                             assert(!std::isnan(loss));
                             loss_sum[model] += loss;
                             loss_sum_counter[model]++;
