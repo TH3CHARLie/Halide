@@ -67,6 +67,8 @@ std::vector<float> sort_runtimes(const ProfilerRuntimes& runtimes, const std::ve
         auto it = runtimes.find(n);
         if (it != runtimes.end()) {
             sorted.push_back(it->second);
+        } else {
+            sorted.push_back(0.0f);
         }
     }
     return sorted;
@@ -77,16 +79,11 @@ std::vector<std::vector<int>> construct_transfrom_matrix(DAG& dag, const Profile
     std::map<std::string, int> sorted_runtime_names;
     std::map<std::string, int> sorted_ordering_names;
     int cnt = 0;
-    for (const auto& n: ordering) {
-        auto it = runtimes.find(n);
-        if (it != runtimes.end()) {
-            sorted_runtime_names[it->first] = cnt++;
-        }
-    }
     cnt = 0;
     for (const auto& n: ordering) {
         sorted_ordering_names[n] = cnt++;
     }
+    sorted_runtime_names = sorted_ordering_names;
     for (size_t i = 0; i < ordering.size(); ++i) {
         // this function is not inlined
         std::string name = ordering[i];

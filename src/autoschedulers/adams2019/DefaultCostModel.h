@@ -50,7 +50,9 @@ public:
     // Evaluate all schedules in the queue.
     void evaluate_costs() override;
 
-    void evaluate_costs_with_stage_runtimes(Runtime::Buffer<float> &stage_predictions, Runtime::Buffer<float>& transformed_stage_predictions);
+    void evaluate_costs_with_stage_runtimes(const Runtime::Buffer<const float> &transform_matrices,
+                                            Runtime::Buffer<float> &stage_predictions,
+                                            Runtime::Buffer<float>& transformed_stage_predictions);
 
     // Discard all schedules in the queue.
     void reset() override;

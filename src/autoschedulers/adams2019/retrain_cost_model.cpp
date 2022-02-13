@@ -185,6 +185,18 @@ string leaf(const string &path) {
     }
 }
 
+void update_per_stage_predictions(PipelineSample &sample, size_t batch_size, Halide::Runtime::Buffer<float> &prediction_buffer) {
+    auto it = sample.schedules.begin();
+    for (size_t i = 0; i < batch_size; ++i) {
+        auto &sched = it->second;
+        sched.stage_predictions.resize(sample.num_stages);
+        for (int j = 0; j < sample.num_stages; ++j) {
+            sched.stage_predictions[j] = prediction_buffer(i, j);
+        }
+        it++;
+    }
+}
+
 void save_predictions(const map<int, PipelineSample> &samples, const string &filename) {
     std::ostringstream out;
     for (const auto &p : samples) {
@@ -202,6 +214,27 @@ void save_predictions(const map<int, PipelineSample> &samples, const string &fil
     assert(!file.fail());
 
     std::cout << "Predictions saved to: " << filename << "\n";
+}
+
+void save_per_stage_predictions(const map<int, PipelineSample> &samples, const string &prefix) {
+    std::vector<string> names = {"bilateral_grid", "interpolated", "blury", "blurx", "blurz", "histogram", "histogram.update(0)",
+                                 "repeat_edge", "lambda_0"};
+    for (size_t i = 0; i < names.size(); ++i) {
+        std::ostringstream out;
+        for (const auto &p : samples) {
+            for (const auto &sched : p.second.schedules) {
+                if (sched.second.runtimes.empty()) {
+                    continue;
+                }
+                out << sched.second.filename << ", " << sched.second.stage_predictions[i] << ", " << sched.second.stage_runtimes[0][i] << "\n";
+            }
+        }
+        std::ofstream file(prefix + names[i] + ".txt", std::ios_base::trunc);
+        file << out.str();
+        file.close();
+        assert(!file.fail());
+        std::cout << "Predictions for " << names[i] << " saved to: " << (prefix + names[i] + ".txt") << "\n";
+    }
 }
 
 std::vector<float> read_metadatafile(const std::string &filename) {
@@ -608,8 +641,17 @@ int main(int argc, char **argv) {
                         } else {
                             Halide::Runtime::Buffer<float> stage_predictions_output(batch_size, ordering_size);
                             Halide::Runtime::Buffer<float> transformed_stage_predictions_output(batch_size, ordering_size);
-                            tp->evaluate_costs_with_stage_runtimes(stage_predictions_output, transformed_stage_predictions_output);
-                            // tp->evaluate_costs();
+                            tp->evaluate_costs_with_stage_runtimes(transform_matrices, stage_predictions_output, transformed_stage_predictions_output);
+                            update_per_stage_predictions(p.second, batch_size, transformed_stage_predictions_output);
+                            // for (size_t ii = 0; ii < batch_size; ++ii) {
+                            //     std::cout << "matrix " << ii << "\n";
+                            //     for (int jj = 0; jj < ordering_size; ++jj) {
+                            //         for (int kk = 0; kk < ordering_size; ++kk) {
+                            //             std::cout << transform_matrices(ii, jj, kk) << " ";
+                            //         }
+                            //         std::cout << '\n';
+                            //     }
+                            // }
                         }
 
                         if (true) {
@@ -714,6 +756,7 @@ int main(int argc, char **argv) {
 
             if (loss_sum[best_model] < 1e-5f) {
                 save_predictions(samples, flags.predictions_file);
+                save_per_stage_predictions(samples, "per_stage_");
                 std::cout << "Zero loss, returning early\n";
                 return 0;
             }

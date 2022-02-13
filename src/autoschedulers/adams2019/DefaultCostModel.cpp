@@ -307,7 +307,9 @@ void DefaultCostModel::evaluate_costs() {
     cursor = 0;
 }
 
-void DefaultCostModel::evaluate_costs_with_stage_runtimes(Runtime::Buffer<float> &stage_predictions, Runtime::Buffer<float> &tranformed_stage_predictions) {
+void DefaultCostModel::evaluate_costs_with_stage_runtimes(const Runtime::Buffer<const float> &transform_matrices,
+                                                          Runtime::Buffer<float> &stage_predictions,
+                                                          Runtime::Buffer<float> &tranformed_stage_predictions) {
     if (cursor == 0 || !schedule_feat_queue.data()) {
         return;
     }
@@ -327,7 +329,7 @@ void DefaultCostModel::evaluate_costs_with_stage_runtimes(Runtime::Buffer<float>
                             weights.head1_filter, weights.head1_bias,
                             weights.head2_filter, weights.head2_bias,
                             weights.conv1_filter, weights.conv1_bias,
-                            0.0f, 0, 0, nullptr, nullptr, nullptr,
+                            0.0f, 0, 0, nullptr, nullptr, transform_matrices.alias(),
                             dst, stage_predictions, tranformed_stage_predictions, loss);
     (void)result;
     internal_assert(result == 0);
