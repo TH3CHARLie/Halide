@@ -3,7 +3,7 @@ interpolated
 blury
 blurx
 blurz
-histogram.update(0)
 histogram
+histogram.update(0)
 repeat_edge
 lambda_0
