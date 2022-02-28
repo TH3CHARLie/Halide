@@ -18,7 +18,11 @@ def parse_runtime(infile):
     lines = [l.strip() for l in lines]
     runtimes = []
     lines = lines[2:]
-    for line in lines[6:]:
+    lines = lines[6:]
+    # some has halide_free in runtime
+    if lines[0].find("halide_free:") != -1:
+        lines = lines[1:]
+    for line in lines:
         tokens = line.split()
         stage_name = tokens[1][:-1]
         stage_runtime = float(tokens[2][:-2])
