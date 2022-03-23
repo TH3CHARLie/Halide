@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# 1 0 0 0 0
 if [[ $# -ne 5 && $# -ne 6 ]]; then
     echo "Usage: $0 max_iterations resume train_only predict_only compare_with_metrics app"
     exit
@@ -26,7 +26,7 @@ fi
 
 BEST_SCHEDULES_DIR=$(dirname $0)/best
 
-HALIDE_ROOT="/home/xuanda/dev/Halide"
+HALIDE_ROOT="/home/shanbin/Halide"
 
 source $(dirname $0)/utils.sh
 
@@ -36,18 +36,17 @@ export HL_MACHINE_PARAMS=20,24000000,160
 
 # export HL_PERMIT_FAILED_UNROLL=1
 
-export AUTOSCHED_BIN="/home/xuanda/dev/Halide/bin"
+export AUTOSCHED_BIN="${HALIDE_ROOT}/bin"
 echo "AUTOSCHED_BIN set to ${AUTOSCHED_BIN}"
-export AUTOSCHED_SRC="/home/xuanda/dev/Halide/src/autoschedulers/adams2019"
+export AUTOSCHED_SRC="${HALIDE_ROOT}/src/autoschedulers/adams2019"
 echo "AUTOSCHED_SRC set to ${AUTOSCHED_SRC}"
-export HALIDE_DISTRIB_PATH="/home/xuanda/dev/Halide/distrib"
+export HALIDE_DISTRIB_PATH="${HALIDE_ROOT}/distrib"
 
 export SEARCH_SPACE_OPTIONS=01111
 echo "SEARCH_SPACE_OPTIONS set to ${SEARCH_SPACE_OPTIONS}"
-echo
-export PAPI_EVENTS="PAPI_TOT_INS,PAPI_TOT_CYC,PAPI_L1_TCM,PAPI_L2_TCM"
-export PAPI_OUTPUT_DIRECTORY="/home/xuanda/dev/Halide/results-perf-counter"
 
+# export PAPI_EVENTS="PAPI_L1_DCM,PAPI_L1_ICM,PAPI_L2_DCM,PAPI_L2_ICM,PAPI_L1_TCM,PAPI_L2_TCM,PAPI_L3_TCM,PAPI_CA_SNP,PAPI_CA_SHR,PAPI_CA_CLN,PAPI_CA_ITV,PAPI_L3_LDM,PAPI_TLB_DM,PAPI_TLB_IM,PAPI_L1_LDM,PAPI_L1_STM,PAPI_L2_LDM,PAPI_L2_STM,PAPI_PRF_DM,PAPI_MEM_WCY,PAPI_STL_ICY,PAPI_FUL_ICY,PAPI_STL_CCY,PAPI_FUL_CCY,PAPI_BR_UCN,PAPI_BR_CN,PAPI_BR_TKN,PAPI_BR_NTK,PAPI_BR_MSP,PAPI_BR_PRC,PAPI_TOT_INS,PAPI_LD_INS,PAPI_SR_INS,PAPI_BR_INS,PAPI_RES_STL,PAPI_TOT_CYC,PAPI_LST_INS,PAPI_L2_DCA,PAPI_L3_DCA,PAPI_L2_DCR,PAPI_L3_DCR,PAPI_L2_DCW,PAPI_L3_DCW,PAPI_L2_ICH,PAPI_L2_ICA,PAPI_L3_ICA,PAPI_L2_ICR,PAPI_L3_ICR,PAPI_L2_TCA,PAPI_L3_TCA,PAPI_L2_TCR,PAPI_L3_TCR,PAPI_L2_TCW,PAPI_L3_TCW,PAPI_SP_OPS,PAPI_DP_OPS,PAPI_VEC_SP,PAPI_VEC_DP,PAPI_REF_CYC"
+export PAPI_OUTPUT_DIRECTORY="${HALIDE_ROOT}/results-perf-counter"
 
 if [ ! -v HL_TARGET ]; then
     get_host_target ${HALIDE_ROOT} HL_TARGET
@@ -62,7 +61,8 @@ DEFAULT_SAMPLES_DIR_NAME="${SAMPLES_DIR:-autotuned_samples}"
 CURRENT_DATE_TIME="`date +%Y-%m-%d-%H-%M-%S`";
 
 if [ -z $APP ]; then
-    APPS="bilateral_grid"
+    APPS="bgu"
+    # APPS="bilateral_grid"
     # APPS="bgu bilateral_grid camera_pipe conv_layer hist iir_blur interpolate lens_blur local_laplacian max_filter nl_means stencil_chain unsharp"
     # APPS="bgu bilateral_grid blur local_laplacian nl_means lens_blur camera_pipe hist max_filter interpolate conv_layer"
 else
@@ -80,7 +80,7 @@ for app in $APPS; do
     SECONDS=0
     APP_DIR="${HALIDE_ROOT}/apps/${app}"
 
-    unset -v LATEST_SAMPLES_DIR
+    unset -v LATEST_SAMPLES_DIR # unset a variable
     for f in "$APP_DIR/${DEFAULT_SAMPLES_DIR_NAME}"*; do
         if [[ ! -d $f ]]; then
            continue
