@@ -171,8 +171,7 @@ void DefaultCostModel::enqueue(int ns, Runtime::Buffer<float> *schedule_feats, d
 // the first moment, and buf(_, 2) is the ADAM running average of
 // the second moment.
 float DefaultCostModel::backprop(const Runtime::Buffer<const float> &true_runtimes, const Runtime::Buffer<const float> &stage_runtimes,
-                                 const Runtime::Buffer<const float> &transform_matrices, Runtime::Buffer<float> &stage_predictions,
-                                 Runtime::Buffer<float> &transformed_stage_predictions, float learning_rate) {
+                                 const Runtime::Buffer<const float> &transform_matrices, float learning_rate) {
     internal_assert(cursor != 0);
     internal_assert(pipeline_feat_queue.data());
     internal_assert(schedule_feat_queue.data());
@@ -209,6 +208,7 @@ float DefaultCostModel::backprop(const Runtime::Buffer<const float> &true_runtim
         }
     }
 
+    Runtime::Buffer<float> relu_output(32, 1, stage_runtimes.dim(0).extent());
     int result = train_cost_model(num_stages,
                                   cursor,
                                   num_cores,
@@ -225,9 +225,8 @@ float DefaultCostModel::backprop(const Runtime::Buffer<const float> &true_runtim
                                   head1_filter_update, head1_bias_update,
                                   head2_filter_update, head2_bias_update,
                                   conv1_filter_update, conv1_bias_update,
+                                  relu_output,
                                   dst,
-                                  stage_predictions,
-                                  transformed_stage_predictions,
                                   loss);
     (void)result;
     internal_assert(result == 0);
@@ -282,8 +281,6 @@ void DefaultCostModel::evaluate_costs() {
     internal_assert(schedule_feat_queue.data());
 
     Runtime::Buffer<float> dst = costs.cropped(0, 0, cursor);
-    Runtime::Buffer<float> stage_predictions(costs.dim(0).extent(), num_stages);
-    Runtime::Buffer<float> tranformed_stage_predictions(costs.dim(0).extent(), num_stages);
     auto loss = Runtime::Buffer<float>::make_scalar();
 
     int result = cost_model(num_stages,
@@ -294,8 +291,8 @@ void DefaultCostModel::evaluate_costs() {
                             weights.head1_filter, weights.head1_bias,
                             weights.head2_filter, weights.head2_bias,
                             weights.conv1_filter, weights.conv1_bias,
-                            0.0f, 0, 0, nullptr, nullptr, nullptr,
-                            dst, stage_predictions, tranformed_stage_predictions, loss);
+                            0.0f, 0, 0, nullptr, nullptr, nullptr, nullptr,
+                            dst, loss);
     (void)result;
     internal_assert(result == 0);
 
@@ -307,9 +304,7 @@ void DefaultCostModel::evaluate_costs() {
     cursor = 0;
 }
 
-void DefaultCostModel::evaluate_costs_with_stage_runtimes(const Runtime::Buffer<const float> &transform_matrices,
-                                                          Runtime::Buffer<float> &stage_predictions,
-                                                          Runtime::Buffer<float> &tranformed_stage_predictions) {
+void DefaultCostModel::evaluate_costs_with_stage_runtimes(const Runtime::Buffer<const float> &transform_matrices, Runtime::Buffer<float> &relu_output) {
     if (cursor == 0 || !schedule_feat_queue.data()) {
         return;
     }
@@ -329,8 +324,8 @@ void DefaultCostModel::evaluate_costs_with_stage_runtimes(const Runtime::Buffer<
                             weights.head1_filter, weights.head1_bias,
                             weights.head2_filter, weights.head2_bias,
                             weights.conv1_filter, weights.conv1_bias,
-                            0.0f, 0, 0, nullptr, nullptr, transform_matrices.alias(),
-                            dst, stage_predictions, tranformed_stage_predictions, loss);
+                            0.0f, 0, 0, nullptr, nullptr, transform_matrices.alias(), relu_output,
+                            dst, loss);
     (void)result;
     internal_assert(result == 0);
 

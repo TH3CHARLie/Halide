@@ -25,6 +25,8 @@ using std::map;
 using std::string;
 using std::vector;
 
+const int MAGIC_IDX = 4;
+
 struct Flags {
     int epochs = 0;
     std::vector<float> rates = {0.1f};
@@ -237,6 +239,218 @@ void save_per_stage_predictions(const map<int, PipelineSample> &samples, const s
     }
 }
 
+void dump_per_schedule_cost_terms(const std::vector<float> &features, const std::vector<float> &relus, const int stage_id) {
+    const int num_cores = 20;
+    int idx = 0;
+    float num_realizations = features[idx++];
+    float num_productions = features[idx++];
+    float points_computed_per_realization = features[idx++];
+    std::cout << "points_computed_per_realization unused: " << points_computed_per_realization << "\n";
+    float points_computed_per_production = features[idx++];
+    std::cout << "points_computed_per_production unused: " << points_computed_per_production << "\n";
+    float points_computed_total = features[idx++];
+    std::cout << "points_computed_total unused: " << points_computed_total << "\n";
+    float points_computed_minimum = features[idx++];
+    std::cout << "points_computed_minimum unused: " << points_computed_minimum << "\n";
+    float innermost_loop_extent = features[idx++];
+    std::cout << "innermost_loop_extent unused: " << innermost_loop_extent << "\n";
+    float innermost_pure_loop_extent = features[idx++];
+    std::cout << "innermost_pure_loop_extent unused: " << innermost_pure_loop_extent << "\n";
+    float unrolled_loop_extent = features[idx++];
+    std::cout << "unrolled_loop_extent unused: " << unrolled_loop_extent << "\n";
+    float inner_parallelism = features[idx++];
+    float outer_parallelism = features[idx++];
+    float bytes_at_realization = features[idx++];
+    float bytes_at_production = features[idx++];
+    float bytes_at_root = features[idx++];
+    std::cout << "bytes_at_root unused: " << bytes_at_root << "\n";
+    float innermost_bytes_at_realization = features[idx++];
+    std::cout << "innermost_bytes_at_realization unused: " << innermost_bytes_at_realization << "\n";
+    float innermost_bytes_at_production = features[idx++];
+    std::cout << "innermost_bytes_at_production unused: " << innermost_bytes_at_production << "\n";
+    float innermost_bytes_at_root = features[idx++];
+    std::cout << "innermost_bytes_at_root unused: " << innermost_bytes_at_root << "\n";
+    float inlined_calls = features[idx++];
+    float unique_bytes_read_per_realization = features[idx++];
+    float unique_lines_read_per_realization = features[idx++];
+    float allocation_bytes_read_per_realization = features[idx++];
+    std::cout << "allocation_bytes_read_per_realization unused: " << allocation_bytes_read_per_realization << "\n";
+    float working_set = features[idx++];
+    float vector_size = features[idx++];
+    float native_vector_size = features[idx++];
+    std::cout << "native_vector_size unused: " << native_vector_size << "\n";
+    float num_vectors = features[idx++];
+    float num_scalars = features[idx++];
+    float scalar_loads_per_vector = features[idx++];
+    float vector_loads_per_vector = features[idx++];
+    float scalar_loads_per_scalar = features[idx++];
+    float bytes_at_task = features[idx++];
+    float innermost_bytes_at_task = features[idx++];
+    float unique_bytes_read_per_vector = features[idx++];
+    float unique_lines_read_per_vector = features[idx++];
+    float unique_bytes_read_per_task = features[idx++];
+    float unique_lines_read_per_task = features[idx++];
+    float working_set_at_task = features[idx++];
+    std::cout << "working_set_at_task unused: " << working_set_at_task << "\n";
+    float working_set_at_production = features[idx++];
+    std::cout << "working_set_at_production unused: " << working_set_at_production << "\n";
+    float working_set_at_realization = features[idx++];
+    std::cout << "working_set_at_realization unused: " << working_set_at_realization << "\n";
+    float working_set_at_root = features[idx++];
+    std::cout << "working_set_at_root unused: " << working_set_at_root << "\n";
+
+    float compute_cost = inlined_calls == 0 ? (vector_size * num_vectors * relus[0] + num_scalars * relus[1]) : (vector_size * num_vectors * relus[2] + num_scalars * relus[3]);
+    float num_tasks = std::max(1.0f, inner_parallelism * outer_parallelism);
+    float tasks_per_core = num_tasks / num_cores;
+    float idle_core_wastage = std::ceil(tasks_per_core) / std::max(1.0f, tasks_per_core);
+
+    compute_cost *= idle_core_wastage;
+
+    float load_cost = (num_realizations * unique_lines_read_per_realization * relus[5] +
+                    num_realizations * unique_bytes_read_per_realization * relus[6] +
+                    num_vectors * scalar_loads_per_vector * relus[7] +
+                    num_scalars * scalar_loads_per_scalar * relus[8] +
+                    num_vectors * vector_loads_per_vector * relus[9] +
+                    num_scalars * unique_bytes_read_per_vector * relus[10] +
+                    num_vectors * unique_bytes_read_per_vector * relus[11] +
+                    num_scalars * unique_lines_read_per_vector * relus[12] +
+                    num_vectors * unique_lines_read_per_vector * relus[13] +
+                    num_tasks * unique_bytes_read_per_task * relus[14] +
+                    num_tasks * unique_lines_read_per_task * relus[15]);
+
+    float lines_written_per_realization = inner_parallelism * (bytes_at_task / std::max(1.0f, innermost_bytes_at_task));
+
+    float alpha = 0.0f;
+    // note we ignore one select branch relus[17] here because w (num_stages) will not be 0
+    if (inner_parallelism > 1) {
+        alpha = relus[16];
+    } else if (stage_id == 0) {
+        alpha = relus[17];
+    } else {
+        alpha = relus[18];
+    }
+
+    float beta = 0.0f;
+    if (inner_parallelism > 1) {
+        alpha = relus[19];
+    } else if (stage_id == 0) {
+        alpha = relus[20];
+    } else {
+        alpha = relus[21];
+    }
+
+    float store_cost = num_realizations * (lines_written_per_realization * alpha +
+                                            bytes_at_realization * beta);
+    float cost_of_false_sharing =
+        (inner_parallelism > 1) ? (relus[22] * (num_vectors + num_scalars) / std::max(1.0f, innermost_bytes_at_task)) : 0.0f;
+
+    store_cost += cost_of_false_sharing;
+
+    float max_threads_hitting_same_page_fault = std::min(inner_parallelism, 4096.0f / std::max(1.0f, innermost_bytes_at_task));
+
+    const float &num_page_faults = bytes_at_production;
+
+    float cost_of_page_faults = (num_page_faults * max_threads_hitting_same_page_fault *
+                                inner_parallelism * outer_parallelism * relus[23]);
+
+    store_cost += cost_of_page_faults;
+
+    float cost_of_malloc = relus[24] * num_realizations;
+
+    float cost_of_parallel_launches = num_productions *
+        (inner_parallelism > 1 ? relus[25] : 0.0f);
+
+    float cost_of_parallel_tasks = num_productions * (inner_parallelism - 1) * relus[26];
+
+
+    float cost_of_parallelism = cost_of_parallel_tasks + cost_of_parallel_launches;
+
+    float cost_of_working_set = working_set * relus[27];
+
+    store_cost *= 2;
+
+    std::cout << "num_tasks: " << num_tasks << "\n";
+    std::cout << "tasks_per_core: " << tasks_per_core << "\n";
+    std::cout << "idle_core_wastage: " << idle_core_wastage << "\n";
+    std::cout << "lines_written_per_realization: " << lines_written_per_realization << "\n";
+    std::cout << "cost_of_false_sharing: " << cost_of_false_sharing << "\n";
+    std::cout << "max_threads_hitting_same_page_fault: " << max_threads_hitting_same_page_fault << "\n";
+    std::cout << "num_page_faults: " << num_page_faults << "\n";
+    std::cout << "cost_of_parallel_launches: " << cost_of_parallel_launches << "\n";
+    std::cout << "cost_of_parallel_tasks: " << cost_of_parallel_tasks << "\n";
+    std::cout << "compute_cost: " << compute_cost << "\n";
+    std::cout << "store_cost: " << store_cost << "\n";
+    std::cout << "load_cost: " << load_cost << "\n";
+    std::cout << "cost_of_malloc: " << cost_of_malloc << "\n";
+    std::cout << "cost_of_parallelism: " << cost_of_parallelism << "\n";
+    std::cout << "cost_of_working_set: " << cost_of_working_set << "\n";
+
+}
+
+// NOTE: only work for single-stage debugging
+void dump_intermediate_states(PipelineSample &sample, Halide::Runtime::Buffer<float> &relu_output, size_t batch_size, const int stage_id) {
+    const std::string schedule_feature_names[] = {
+        "num_realizations",
+        "num_productions",
+        "points_computed_per_realization",
+        "points_computed_per_production",
+        "points_computed_total",
+        "points_computed_minimum",
+        "innermost_loop_extent",
+        "innermost_pure_loop_extent",
+        "unrolled_loop_extent",
+        "inner_parallelism",
+        "outer_parallelism",
+        "bytes_at_realization",
+        "bytes_at_production",
+        "bytes_at_root",
+        "innermost_bytes_at_realization",
+        "innermost_bytes_at_production",
+        "innermost_bytes_at_root",
+        "inlined_calls",
+        "unique_bytes_read_per_realization",
+        "unique_lines_read_per_realization",
+        "allocation_bytes_read_per_realizatio",
+        "working_set",
+        "vector_size",
+        "native_vector_size",
+        "num_vectors",
+        "num_scalars",
+        "scalar_loads_per_vector",
+        "vector_loads_per_vector",
+        "scalar_loads_per_scalar",
+        "bytes_at_task",
+        "innermost_bytes_at_task",
+        "unique_bytes_read_per_vector",
+        "unique_lines_read_per_vector",
+        "unique_bytes_read_per_task",
+        "unique_lines_read_per_task",
+        "working_set_at_task",
+        "working_set_at_production",
+        "working_set_at_realization",
+        "working_set_at_root"
+    };
+    auto it = sample.schedules.begin();
+    for (size_t i = 0; i < batch_size; ++i) {
+        Sample &sched = it->second;
+        std::cout << "dumping intermediate states for file: " << sched.filename << "\n";
+        std::cout << "schedule features\n";
+        std::vector<float> features;
+        for (int j = 0; j < sched.schedule_features.dim(0).extent(); ++j) {
+            std::cout << schedule_feature_names[j] << ": " << sched.schedule_features(j, 0) << "\n";
+            features.push_back(sched.schedule_features(j, 0));
+        }
+        std::cout << "relu outputs\n";
+        std::vector<float> relus;
+        for (size_t j = 0; j < 32; ++j) {
+            std::cout << "relu(" << j << "): " << relu_output(j, 0, i) << "\n";
+            relus.push_back(relu_output(j, 0, i));
+        }
+        dump_per_schedule_cost_terms(features, relus, stage_id);
+        it++;
+    }
+}
+
 std::vector<float> read_metadatafile(const std::string &filename) {
     std::ifstream file(filename);
     vector<float> scratch(10 * 1024 * 1024);
@@ -261,6 +475,7 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
         if (sample_filename.empty()) {
             continue;
         }
+        std::cout << "[DEBUG] reading filename: " << sample_filename << "\n";
         if (!ends_with(sample_filename, ".newsample")) {
             std::cout << "Skipping file: " << sample_filename << "\n";
             continue;
@@ -287,7 +502,9 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
             std::cout << "Truncated sample: " << sample_filename << " " << floats_read << "\n";
             continue;
         }
-        const size_t num_stages = num_features / features_per_stage;
+        const size_t num_stages = 1;
+        const size_t true_num_stages = num_features / features_per_stage;
+        // const size_t num_stages = num_features / features_per_stage;
 
         int pipeline_id = *((int32_t *)(&scratch[num_features]));
         const int schedule_id = *((int32_t *)(&scratch[num_features + 1]));
@@ -297,7 +514,11 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
         const int ordering_size = *((int32_t *)(&metadata_scratch[1]));
         std::vector<float> stage_runtimes;
         for (int i = 0; i < runtime_size; ++i) {
+            if (i != MAGIC_IDX) {
+                continue;
+            }
             stage_runtimes.push_back(metadata_scratch[2 + i]);
+            std::cout << "[DEBUG] stage runtime " << metadata_scratch[2 + i] << "\n";
         }
         std::vector<int> transform_matrix;
         for (int i = 0; i < ordering_size * ordering_size; ++i) {
@@ -305,6 +526,7 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
         }
 
         const float runtime = std::accumulate(stage_runtimes.begin(), stage_runtimes.end(), 0.0f);
+        std::cout << "[DEBUG] e2e runtime " << runtime << "\n";
         if (runtime > 100000) {  // Don't try to predict runtime over 100s
             std::cout << "Implausible runtime in ms: " << runtime << "\n";
             continue;
@@ -323,14 +545,19 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
             ps.num_stages = (int)num_stages;
             ps.pipeline_features = Buffer<float>(head1_w, head1_h, num_stages);
             ps.fastest_runtime = 1e30f;
-            for (size_t i = 0; i < num_stages; i++) {
+            for (size_t i = 0; i < true_num_stages; i++) {
+                if (i != MAGIC_IDX) {
+                    continue;
+                }
                 for (int x = 0; x < head1_w; x++) {
                     for (int y = 0; y < head1_h; y++) {
                         float f = scratch[i * features_per_stage + (x + 1) * 7 + y + head2_w];
                         if (f < 0 || std::isnan(f)) {
                             std::cout << "Negative or NaN pipeline feature: " << x << " " << y << " " << i << " " << f << "\n";
                         }
-                        ps.pipeline_features(x, y, i) = f;
+                        // ps.pipeline_features(x, y, i) = f;
+                        std::cout << "[DEBUG] reading pipeline feature: " << f << "\n";
+                        ps.pipeline_features(x, y, 0) = f;
                     }
                 }
             }
@@ -339,7 +566,10 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
         }
 
         uint64_t schedule_hash = 0;
-        for (size_t i = 0; i < num_stages; i++) {
+        for (size_t i = 0; i < true_num_stages; i++) {
+            if (i != MAGIC_IDX) {
+                continue;
+            }
             schedule_hash =
                 hash_floats(schedule_hash,
                             &scratch[i * features_per_stage],
@@ -406,7 +636,10 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
             sample.transform_matrices.push_back(transform_matrix_buffer);
 
             bool ok = true;
-            for (size_t i = 0; i < num_stages; i++) {
+            for (size_t i = 0; i < true_num_stages; i++) {
+                if (i != MAGIC_IDX) {
+                    continue;
+                }
                 for (int x = 0; x < head2_w; x++) {
                     float f = scratch[i * features_per_stage + x];
                     if (f < 0 || f > 1e14 || std::isnan(f)) {
@@ -414,7 +647,9 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
                         // Something must have overflowed
                         ok = false;
                     }
-                    sample.schedule_features(x, i) = f;
+                    // sample.schedule_features(x, i) = f;
+                    sample.schedule_features(x, 0) = f;
+                    std::cout << "[DEBUG] reading schedule feature: " << f << "\n";
                 }
                 /*
                 if (sample.schedule_features(0, i) != sample.schedule_features(1, i)) {
@@ -437,6 +672,8 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
         if (num_read % 10000 == 0) {
             std::cout << "Samples loaded: " << num_read << " (" << num_unique << " unique)\n";
         }
+        // int aaaaaaaaaa;
+        // std::cin >> aaaaaaaaaa;
     }
 
     // Check the noise level
@@ -587,6 +824,7 @@ int main(int argc, char **argv) {
                         tp->set_pipeline_features(p.second.pipeline_features, flags.num_cores);
 
                         size_t batch_size = std::min((size_t)1024, p.second.schedules.size());
+                        std::cout << "batch_size: " << batch_size << "\n";
                         size_t fastest_idx = 0;
                         Halide::Runtime::Buffer<float> runtimes(batch_size);
                         Halide::Runtime::Buffer<float> stage_runtimes(batch_size, ordering_size);
@@ -621,7 +859,7 @@ int main(int argc, char **argv) {
 
                         float loss = 0.0f;
                         if (train & !predict_only) {
-                            loss = tp->backprop(runtimes, stage_runtimes, transform_matrices, stage_predictions, transformed_stage_runtimes, learning_rate);
+                            loss = tp->backprop(runtimes, stage_runtimes, transform_matrices, learning_rate);
                             assert(!std::isnan(loss));
                             loss_sum[model] += loss;
                             loss_sum_counter[model]++;
@@ -641,8 +879,10 @@ int main(int argc, char **argv) {
                         } else {
                             Halide::Runtime::Buffer<float> stage_predictions_output(batch_size, ordering_size);
                             Halide::Runtime::Buffer<float> transformed_stage_predictions_output(batch_size, ordering_size);
-                            tp->evaluate_costs_with_stage_runtimes(transform_matrices, stage_predictions_output, transformed_stage_predictions_output);
+                            Halide::Runtime::Buffer<float> relu_output(32, 1, batch_size);
+                            tp->evaluate_costs_with_stage_runtimes(transform_matrices, relu_output);
                             update_per_stage_predictions(p.second, batch_size, transformed_stage_predictions_output);
+                            dump_intermediate_states(p.second, relu_output, batch_size, MAGIC_IDX);
                             // for (size_t ii = 0; ii < batch_size; ++ii) {
                             //     std::cout << "matrix " << ii << "\n";
                             //     for (int jj = 0; jj < ordering_size; ++jj) {

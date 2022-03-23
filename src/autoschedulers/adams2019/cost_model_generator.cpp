@@ -170,17 +170,14 @@ public:
     // The tranform matrices for handling mismatch caused by inlining
     Input<Buffer<float>> transform_matrices{"transform_matrices", 3};
 
+    Output<Buffer<float>> relu_output{"relu_output", 3};
+
     // The predicted runtimes
     Output<Buffer<float>> prediction_output{"prediction_output", 1};
 
-    // The predicted pre-stage runtimes
-    Output<Buffer<float>> stage_predictions_output{"stage_predictions_output", 2};
-
-    // The transformed per-stage runtimes
-    Output<Buffer<float>> transformed_stage_predictions_output{"transformed_stage_predictions_output", 2};
-
     // The loss. L2 on relative throughput.
     Output<Buffer<float>> loss_output{"loss_output", 0};
+
 
     // Zero pad alone the last dimension of a Func
     Func pad_stages(const Func &f, const Expr &stages) {
@@ -416,11 +413,9 @@ public:
 
         prediction_output(n) = prediction(n);
 
-        stage_predictions_output = runtime_per_stage;
-        RDom r_matmul(0, num_stages);
-        transformed_stage_predictions_output(n, w) += runtime_per_stage(n, r_matmul) * transform_matrices(n, r_matmul, w);
+        relu_output(c, w, n) = relu1(c, w, n);
+
         Func err;
-        Func per_stage_err;
 
         if (!training) {
             loss_output() = 0.0f;
@@ -450,30 +445,15 @@ public:
             Expr p1 = prediction(n) * scale;
             Expr r1 = true_runtime(n) * scale;
 
-            Expr per_stage_scale = 1.0f / stage_runtimes(n2, w);
-            // per_stage_scale leads to 0 in divison, so use the E2E scale here
-            Expr per_stage_p1 = transformed_stage_predictions_output(n, w) * scale;
-
-            Expr per_stage_r1 = stage_runtimes(n, w) * scale;
-
-            RDom r_per_stage(0, batch_size, 0, num_stages);
-
             // Invert them to get relative throughput, and compute L2 loss.
             Expr delta = pow(1.0f / max(p1, 1e-10f) - 1.0f / r1, 2);
 
-            // Expr stage_delta = pow(1.0f / max(per_stage_p1, 1e-10f) - 1.0f / max(per_stage_r1, 1e-10f), 2);
-            Expr stage_delta = pow(per_stage_p1 - per_stage_r1, 2);
-            // Expr stage_delta = pow(runtime_per_stage(n, w) - stage_runtimes(n, w), 2);
-            // Add the regulization with a small weight.
             err(n) = delta + 1e-5f * regularize;
-
-            per_stage_err(n, w) = stage_delta + 1e-5f * regularize;
 
             // Sum the errors over the batch.
             Expr loss = sum(err(r_batch));
-            Expr per_stage_loss = sum(per_stage_err(r_per_stage.x, r_per_stage.y));
 
-            loss_output() = per_stage_loss;
+            loss_output() = loss;
 
             // Compute derivatives of the loss, and backpropagate them
             // to the model weights.
@@ -506,8 +486,6 @@ public:
         batch_size.set_estimate(80);
         num_stages.set_estimate(13);
         prediction_output.set_estimates({{0, 80}});
-        stage_predictions_output.set_estimates({{0, 80}, {0, 13}});
-        transformed_stage_predictions_output.set_estimates({{0, 80}, {0, 13}});
         learning_rate.set_estimate(0.001f);
         timestep.set_estimate(37);
         pipeline_features.set_estimates({{0, head1_w}, {0, head1_h}, {0, 13}});
@@ -515,7 +493,7 @@ public:
         true_runtime.set_estimates({{0, 80}});
         stage_runtimes.set_estimates({{0, 80}, {0, 13}});
         transform_matrices.set_estimates({{0, 80}, {0, 13}, {0, 13}});
-
+        relu_output.set_estimates({{0, 32}, {0, 13}, {0, 80}});
         // SCHEDULE
         if (training && !auto_schedule) {
             do_cost_model_schedule(get_pipeline());
