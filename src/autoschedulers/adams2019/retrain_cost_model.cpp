@@ -520,16 +520,20 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
             stage_runtimes.push_back(metadata_scratch[2 + i]);
             std::cout << "[DEBUG] stage runtime " << metadata_scratch[2 + i] << "\n";
         }
-        std::vector<int> transform_matrix;
-        for (int i = 0; i < ordering_size * ordering_size; ++i) {
-            transform_matrix.push_back(*((int32_t *)(&metadata_scratch[2 + runtime_size + i])));
-        }
 
         const float runtime = std::accumulate(stage_runtimes.begin(), stage_runtimes.end(), 0.0f);
         std::cout << "[DEBUG] e2e runtime " << runtime << "\n";
         if (runtime > 100000) {  // Don't try to predict runtime over 100s
             std::cout << "Implausible runtime in ms: " << runtime << "\n";
             continue;
+        }
+        if (runtime == 0) {
+            std::cout << "skip samples with 0 runtime\n";
+            continue;
+        }
+        std::vector<int> transform_matrix;
+        for (int i = 0; i < ordering_size * ordering_size; ++i) {
+            transform_matrix.push_back(*((int32_t *)(&metadata_scratch[2 + runtime_size + i])));
         }
         // std::cout << "Runtime: " << runtime << "\n";
         if (runtime < best_runtime) {
@@ -556,7 +560,7 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
                             std::cout << "Negative or NaN pipeline feature: " << x << " " << y << " " << i << " " << f << "\n";
                         }
                         // ps.pipeline_features(x, y, i) = f;
-                        std::cout << "[DEBUG] reading pipeline feature: " << f << "\n";
+                        // std::cout << "[DEBUG] reading pipeline feature: " << f << "\n";
                         ps.pipeline_features(x, y, 0) = f;
                     }
                 }
@@ -649,7 +653,7 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
                     }
                     // sample.schedule_features(x, i) = f;
                     sample.schedule_features(x, 0) = f;
-                    std::cout << "[DEBUG] reading schedule feature: " << f << "\n";
+                    // std::cout << "[DEBUG] reading schedule feature: " << f << "\n";
                 }
                 /*
                 if (sample.schedule_features(0, i) != sample.schedule_features(1, i)) {
@@ -831,9 +835,9 @@ int main(int argc, char **argv) {
                         Halide::Runtime::Buffer<float> transformed_stage_runtimes(batch_size, ordering_size);
                         Halide::Runtime::Buffer<float> transform_matrices(batch_size, ordering_size, ordering_size);
                         size_t first = 0;
-                        // if (p.second.schedules.size() > 1024) {
-                        //     first = rng() % (p.second.schedules.size() - 1024);
-                        // }
+                        if (p.second.schedules.size() > 1024) {
+                            first = rng() % (p.second.schedules.size() - 1024);
+                        }
                         Halide::Runtime::Buffer<float> stage_predictions(batch_size, ordering_size);
                         auto it = p.second.schedules.begin();
                         std::advance(it, first);
