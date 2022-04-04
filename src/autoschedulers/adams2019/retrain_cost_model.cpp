@@ -527,10 +527,6 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
             std::cout << "Implausible runtime in ms: " << runtime << "\n";
             continue;
         }
-        if (runtime == 0) {
-            std::cout << "skip samples with 0 runtime\n";
-            continue;
-        }
         std::vector<int> transform_matrix;
         for (int i = 0; i < ordering_size * ordering_size; ++i) {
             transform_matrix.push_back(*((int32_t *)(&metadata_scratch[2 + runtime_size + i])));
@@ -1000,7 +996,7 @@ int main(int argc, char **argv) {
 
             if (loss_sum[best_model] < 1e-5f) {
                 save_predictions(samples, flags.predictions_file);
-                save_per_stage_predictions(samples, "per_stage_");
+                // save_per_stage_predictions(samples, "per_stage_");
                 std::cout << "Zero loss, returning early\n";
                 return 0;
             }
