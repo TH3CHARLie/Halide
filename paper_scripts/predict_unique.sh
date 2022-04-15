@@ -1,7 +1,7 @@
 #!/bin/bash
 
-if [ $# -ne 4 ]; then
-  echo "Usage: $0 samples_dir weights_file predictions_file sample_file"
+if [ $# -ne 5 ]; then
+  echo "Usage: $0 samples_dir weights_file predictions_file sample_file stage_idx"
   exit
 fi
 
@@ -10,6 +10,7 @@ SAMPLES_DIR=${1}
 WEIGHTS_FILE=${2}
 PREDICTIONS_FILE=${3}
 SAMPLE_FILE=${4}
+STAGE_IDX=${5}
 PREDICTIONS_WITH_FILENAMES_FILE="${PREDICTIONS_FILE}_with_filename"
 echo
 echo "Samples directory: ${SAMPLES_DIR}"
@@ -33,6 +34,7 @@ cat ${SAMPLE_FILE} | \
         --predictions_file=${PREDICTIONS_WITH_FILENAMES_FILE} \
         --verbose="0" \
         --partition_schedules="0" \
-        --limit="0"
+        --limit="0" \
+        --stage_idx=${STAGE_IDX}
 
 awk -F", " '{printf("%f, %f\n", $2, $3);}' ${PREDICTIONS_WITH_FILENAMES_FILE} > ${PREDICTIONS_FILE}

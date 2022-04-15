@@ -25,8 +25,6 @@ using std::map;
 using std::string;
 using std::vector;
 
-const int MAGIC_IDX = 4;
-
 struct Flags {
     int epochs = 0;
     std::vector<float> rates = {0.1f};
@@ -42,6 +40,7 @@ struct Flags {
     bool verbose;
     bool partition_schedules;
     int limit;
+    int stage_idx;
 
     Flags(int argc, char **argv) {
         cmdline::parser a;
@@ -62,6 +61,7 @@ struct Flags {
         a.add<bool>("verbose");
         a.add<bool>("partition_schedules");
         a.add<int>("limit");
+        a.add<int>("stage_idx");
 
         a.parse_check(argc, argv);  // exits if parsing fails
 
@@ -77,6 +77,7 @@ struct Flags {
         verbose = a.exist("verbose") && a.get<bool>("verbose");
         partition_schedules = a.exist("partition_schedules") && a.get<bool>("partition_schedules");
         limit = a.get<int>("limit");
+        stage_idx = a.get<int>("stage_idx");
 
         if (epochs <= 0) {
             std::cerr << "--epochs must be specified and > 0.\n";
@@ -502,8 +503,8 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
             std::cout << "Truncated sample: " << sample_filename << " " << floats_read << "\n";
             continue;
         }
-        const size_t num_stages = 1;
-        const size_t true_num_stages = num_features / features_per_stage;
+        const int num_stages = 1;
+        const int true_num_stages = num_features / features_per_stage;
         // const size_t num_stages = num_features / features_per_stage;
 
         int pipeline_id = *((int32_t *)(&scratch[num_features]));
@@ -514,7 +515,7 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
         const int ordering_size = *((int32_t *)(&metadata_scratch[1]));
         std::vector<float> stage_runtimes;
         for (int i = 0; i < runtime_size; ++i) {
-            if (i != MAGIC_IDX) {
+            if (i != flags.stage_idx) {
                 continue;
             }
             stage_runtimes.push_back(metadata_scratch[2 + i]);
@@ -545,8 +546,8 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
             ps.num_stages = (int)num_stages;
             ps.pipeline_features = Buffer<float>(head1_w, head1_h, num_stages);
             ps.fastest_runtime = 1e30f;
-            for (size_t i = 0; i < true_num_stages; i++) {
-                if (i != MAGIC_IDX) {
+            for (int i = 0; i < true_num_stages; i++) {
+                if (i != flags.stage_idx) {
                     continue;
                 }
                 for (int x = 0; x < head1_w; x++) {
@@ -566,8 +567,8 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
         }
 
         uint64_t schedule_hash = 0;
-        for (size_t i = 0; i < true_num_stages; i++) {
-            if (i != MAGIC_IDX) {
+        for (int i = 0; i < true_num_stages; i++) {
+            if (i != flags.stage_idx) {
                 continue;
             }
             schedule_hash =
@@ -636,8 +637,8 @@ map<int, PipelineSample> load_samples(const Flags &flags) {
             sample.transform_matrices.push_back(transform_matrix_buffer);
 
             bool ok = true;
-            for (size_t i = 0; i < true_num_stages; i++) {
-                if (i != MAGIC_IDX) {
+            for (int i = 0; i < true_num_stages; i++) {
+                if (i != flags.stage_idx) {
                     continue;
                 }
                 for (int x = 0; x < head2_w; x++) {
@@ -882,7 +883,7 @@ int main(int argc, char **argv) {
                             Halide::Runtime::Buffer<float> relu_output(32, 1, batch_size);
                             tp->evaluate_costs_with_stage_runtimes(transform_matrices, relu_output);
                             update_per_stage_predictions(p.second, batch_size, transformed_stage_predictions_output);
-                            dump_intermediate_states(p.second, relu_output, batch_size, MAGIC_IDX);
+                            dump_intermediate_states(p.second, relu_output, batch_size, flags.stage_idx);
                             // for (size_t ii = 0; ii < batch_size; ++ii) {
                             //     std::cout << "matrix " << ii << "\n";
                             //     for (int jj = 0; jj < ordering_size; ++jj) {

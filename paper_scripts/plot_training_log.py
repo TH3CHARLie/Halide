@@ -6,6 +6,7 @@ import math
 
 if __name__ == "__main__":
     infile = sys.argv[1]
+    app_name = sys.argv[2]
     epoches = []
     losses = []
     with open(infile, "r") as f:
@@ -16,15 +17,15 @@ if __name__ == "__main__":
                 losses.append(float(tokens[3]))
     plt.figure()
     plt.plot(epoches, losses)
-    plt.title("Training Loss curve (on unique samples)")
+    plt.title(f"Training Loss curve of {app_name} (on unique samples)")
     plt.xlabel("Epoch")
     plt.ylabel("Training Loss")
-    plt.savefig("training_unique_loss.png", dpi=200)
+    plt.savefig(f"training_unique_loss_{app_name}.png", dpi=200)
 
     plt.figure()
     losses = [math.log2(x) for x in losses]
     plt.plot(epoches, losses)
-    plt.title("Training Loss curve (on unique samples)")
+    plt.title(f"Training Loss curve of {app_name} (on unique samples)")
     plt.xlabel("Epoch")
     plt.ylabel("Training Loss (log2 scaled)")
-    plt.savefig("training_unique_loss_log.png", dpi=200)
+    plt.savefig(f"training_unique_loss_log_{app_name}.png", dpi=200)
