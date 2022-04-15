@@ -5,8 +5,8 @@ import math
 import os
 import struct
 
-TARGET_STAGE = "blurz"
-TARGET_STAGE_IDX = 4
+TARGET_STAGE = "blury"
+TARGET_STAGE_IDX = 2
 
 NUM_STAGES = 9
 HEAD2_W = 39
@@ -94,7 +94,7 @@ def main():
     runtimes = []
     sample_names = [x[x.rfind('/') + 1:] for x in sample_paths]
     sample_folders = [x[:x.rfind('/') + 1] for x in sample_paths]
-    compile_log_folders = [x.replace(sample_prefix, compile_log_prefix) for x in sample_folders]
+    # compile_log_folders = [x.replace(sample_prefix, compile_log_prefix) for x in sample_folders]
     # for name, folder in zip(sample_names, compile_log_folders):
     #     compile_log_file = folder + "compile_log.txt"
     #     feature_dict = parse_compile_log(name, compile_log_file)
@@ -128,11 +128,12 @@ def main():
             diff = compute_diff(names[i], features[i], names[j], features[j])
             diffs_with_idx.append((diff, (i, j)))
     sorted_diffs = sorted(diffs_with_idx, key=lambda x: x[0])
-    TOP_K = 20
+    TOP_K = 1000
     print(f"dump top {TOP_K} minimum diff sample pairs")
     i = 0
     cnt = 0
-    while cnt < TOP_K:
+    candidates = []
+    while cnt < TOP_K and i < len(sorted_diffs):
         diff = sorted_diffs[i][0]
         idx_i, idx_j = sorted_diffs[i][1]
         i += 1
@@ -141,9 +142,16 @@ def main():
         if name_1 in predicted_runtimes and name_2 in predicted_runtimes:
             predicted_1 = predicted_runtimes[name_1]
             predicted_2 = predicted_runtimes[name_2]
-            if predicted_1 != predicted_2:
+            actual_1 = runtimes[idx_i]
+            actual_2 = runtimes[idx_j]
+            if diff < 200 and actual_1 != actual_2:
                 cnt += 1
-                print("diff between {} and {}: {}, runtimes: {:.3f}, {:.3f} predicted: {:.3f}, {:.3f}".format(name_1, name_2, diff, runtimes[idx_i], runtimes[idx_j], predicted_runtimes[name_1], predicted_runtimes[name_2]))
+                factor = max(actual_1, actual_2) / min(actual_1, actual_2)
+                candidates.append((name_1, name_2, diff, actual_1, actual_2, factor))
+    candidates = sorted(candidates, key=lambda x: x[5], reverse=True)
+    for c in candidates:
+        name_1, name_2, diff, actual_1, actual_2, factor = c 
+        print("diff between {} and {}: {}, runtimes: {:.3f}, {:.3f} factor: {:.3f}".format(name_1, name_2, diff, actual_1, actual_2, factor))
     num_pairs = 0
     for x in sorted_diffs:
         diff = x[0]

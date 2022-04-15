@@ -5,8 +5,8 @@ import math
 import os
 import struct
 
-TARGET_STAGE = "blurz"
-TARGET_STAGE_IDX = 4
+TARGET_STAGE = "blurx"
+TARGET_STAGE_IDX = 3
 
 NUM_STAGES = 9
 HEAD2_W = 39
