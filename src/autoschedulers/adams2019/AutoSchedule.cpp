@@ -535,6 +535,16 @@ IntrusivePtr<State> optimal_schedule(FunctionDAG &dag,
 // Keep track of how many times we evaluated a state.
 int State::cost_calculations = 0;
 
+uint64_t hash_floats(uint64_t h, const float *begin, const float *end) {
+    while (begin != end) {
+        uint32_t bits = *((const uint32_t *)begin);
+        // From boost
+        h ^= (bits + 0x9e3779b9 + (h << 6) + (h >> 2));
+        begin++;
+    }
+    return h;
+}
+
 // The main entrypoint to generate a schedule for a pipeline.
 void generate_schedule(const std::vector<Function> &outputs,
                        const Target &target,
@@ -607,9 +617,68 @@ void generate_schedule(const std::vector<Function> &outputs,
     // Apply the schedules to the pipeline
     optimal->apply_schedule(dag, params);
 
+    // get optmial hash here?
+    // optimal->structural_hash();
+
+
     // Print out the schedule
     if (aslog::aslog_level() > 0) {
         optimal->dump();
+    }
+
+
+    string samples_dir = get_env_variable("SAMPLES");
+    if (!samples_dir.empty()) {
+        // try to get all generated hashes
+        // add schedule hash here
+        uint64_t schedule_hash = 0;
+        StageMap<ScheduleFeatures> features;
+        optimal->compute_featurization(dag, params, &features, cache_options);
+
+        for (const auto &n : dag.nodes) {
+            if (n.is_input) {
+                continue;
+            }
+            for (size_t stage_idx = n.stages.size(); stage_idx > 0; stage_idx--) {
+                const auto &s = n.stages[stage_idx - 1];
+                const size_t num_schedule_features = ScheduleFeatures::num_features();
+                const auto &sched_feat = features.get(&s);
+
+                float buf[num_schedule_features];
+                // Save them as floats
+                for (size_t i = 0; i < num_schedule_features; i++) {
+                    buf[i] = sched_feat[i];
+                }
+                schedule_hash = hash_floats(schedule_hash,
+                            &buf[0],
+                            &buf[num_schedule_features]);
+            }
+        }
+
+        // read all generated hashes
+        std::fstream file(samples_dir + "/generated_schedule_hash", std::ios::in | std::ios::out | std::ios::app | std::ios::binary);
+        std::streampos fileSize;
+        file.seekg(0, std::ios::end);
+        fileSize = file.tellg();
+        file.seekg(0, std::ios::beg);
+
+        uint64_t* hashes = new uint64_t [fileSize / sizeof(uint64_t)];
+        file.read((char*)hashes, fileSize);
+
+        bool found = false;
+        for(size_t i = 0; i < fileSize / sizeof(uint64_t); i ++) {
+            found = hashes[i] == schedule_hash;
+            if (found) {
+                aslog(0) << "seen this before: " << schedule_hash << "\n";
+                return;
+            }
+        }
+
+        
+        // write this hash to file and continue
+        aslog(0) << "new hash: " << schedule_hash << "\n";
+        file.write((char*)&schedule_hash, sizeof(schedule_hash));
+        file.close();
     }
 
     string schedule_file = get_env_variable("HL_SCHEDULE_FILE");
