@@ -3,6 +3,7 @@ import sys
 import matplotlib.pyplot as plt
 import math
 
+INTERVAL = 5000
 
 if __name__ == "__main__":
     infile = sys.argv[1]
@@ -16,7 +17,7 @@ if __name__ == "__main__":
                 epoches.append(float(tokens[1]))
                 losses.append(float(tokens[3]))
     plt.figure()
-    plt.plot(epoches, losses)
+    plt.plot(epoches[::INTERVAL], losses[::INTERVAL])
     plt.title(f"Training Loss curve of {app_name} (on unique samples)")
     plt.xlabel("Epoch")
     plt.ylabel("Training Loss")

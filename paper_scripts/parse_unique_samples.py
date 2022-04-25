@@ -3,7 +3,7 @@ import sys
 import matplotlib.pyplot as plt
 import math
 
-PREFIX = "../apps/bilateral_grid/autotuned_samples-2022-03-29-10-22-01/"
+PREFIX = "../apps/bilateral_grid/autotuned_samples-2022-04-18-16-13-23/"
 
 if __name__ == "__main__":
     infile = sys.argv[1]
