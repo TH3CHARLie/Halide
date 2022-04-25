@@ -77,7 +77,7 @@ done
 
 # A batch of this many samples is built in parallel, and then
 # benchmarked serially.
-BATCH_SIZE=40
+BATCH_SIZE=2
 
 TIMEOUT_CMD="timeout"
 if [ $(uname -s) = "Darwin" ] && ! which $TIMEOUT_CMD 2>&1 >/dev/null; then
@@ -109,13 +109,13 @@ make_featurization() {
         beam=1
     fi
 
+    
     # Note: generate sample program
     HL_SEED=${SEED} \
         HL_WEIGHTS_DIR=${WEIGHTS} \
         HL_RANDOM_DROPOUT=${dropout} \
         HL_BEAM_SIZE=${beam} \
         HL_MACHINE_PARAMS=20,24000000,40 \
-        SAMPLES=${SAMPLES} \
         ${TIMEOUT_CMD} -k ${COMPILATION_TIMEOUT} ${COMPILATION_TIMEOUT} \
         ${GENERATOR} \
         -g ${PIPELINE} \
@@ -129,12 +129,17 @@ make_featurization() {
         # -p ${AUTOSCHED_BIN}/libautoschedule_adams2019.so \
         2> ${D}/compile_log.txt || echo "Compilation failed or timed out for ${D}"
 
-
+    echo ${SAMPLES}/generated_schedule_hash ${D}/${FNAME}.sample ${D}/should_skip
+    ${AUTOSCHED_BIN}/check_hash ${SAMPLES}/generated_schedule_hash ${D}/${FNAME}.featurization ${D}/should_skip
     # We don't need image I/O for this purpose,
     # so leave out libpng and libjpeg
 
     # Note: compile sample program
-    c++ \
+    should_skip=`cat ${D}/should_skip`
+    echo $should_skip
+    if [ $should_skip == "0" ]; then
+        echo "compiling since this sample has not been compiled before"
+        c++ \
         -std=c++17 \
         -I ${HALIDE_DISTRIB_PATH}/include \
         -I/${PAPI_DIR}/include \
@@ -146,6 +151,7 @@ make_featurization() {
         -DHALIDE_NO_PNG -DHALIDE_NO_JPEG \
         -ldl -lpthread \
         -lpapi
+    fi
 }
 
 
@@ -153,31 +159,35 @@ make_featurization() {
 benchmark_sample() {
     sleep 1 # Give CPU clocks a chance to spin back up if we're thermally throttling
     D=${1}
-    export PAPI_TARGET_EVENTS="PAPI_L1_DCM,PAPI_L1_ICM,PAPI_L2_DCM,PAPI_L2_ICM,PAPI_L1_TCM,PAPI_L2_TCM,PAPI_L3_TCM,PAPI_CA_SNP,PAPI_CA_SHR,PAPI_CA_CLN,PAPI_CA_ITV,PAPI_L3_LDM,PAPI_TLB_DM,PAPI_TLB_IM,PAPI_L1_LDM,PAPI_L1_STM,PAPI_L2_LDM,PAPI_L2_STM,PAPI_PRF_DM,PAPI_MEM_WCY,PAPI_STL_ICY,PAPI_FUL_ICY,PAPI_STL_CCY,PAPI_FUL_CCY,PAPI_BR_UCN,PAPI_BR_CN,PAPI_BR_TKN,PAPI_BR_NTK,PAPI_BR_MSP,PAPI_BR_PRC,PAPI_TOT_INS,PAPI_LD_INS,PAPI_SR_INS,PAPI_BR_INS,PAPI_RES_STL,PAPI_TOT_CYC,PAPI_LST_INS,PAPI_L2_DCA,PAPI_L3_DCA,PAPI_L2_DCR,PAPI_L3_DCR,PAPI_L2_DCW,PAPI_L3_DCW,PAPI_L2_ICH,PAPI_L2_ICA,PAPI_L3_ICA,PAPI_L2_ICR,PAPI_L3_ICR,PAPI_L2_TCA,PAPI_L3_TCA,PAPI_L2_TCR,PAPI_L3_TCR,PAPI_L2_TCW,PAPI_L3_TCW,PAPI_SP_OPS,PAPI_DP_OPS,PAPI_VEC_SP,PAPI_VEC_DP,PAPI_REF_CYC"
-    export PAPI_OUTPUT_DIRECTORY=${D}
-    while [[ ! -z "$PAPI_TARGET_EVENTS" ]]; do
-        result=($(python3 ${HALIDE_DISTRIB_PATH}/../paper_scripts/set_events.py))
-        export PAPI_EVENTS=${result[0]}
-        if [[ ${#result[@]} -eq 1 ]]
-        then
-            export PAPI_TARGET_EVENTS=""
-        else
-            export PAPI_TARGET_EVENTS=${result[1]}
-        fi
 
-        HL_NUM_THREADS=20 \
-            ${TIMEOUT_CMD} -k ${BENCHMARKING_TIMEOUT} ${BENCHMARKING_TIMEOUT} \
-            ${D}/bench \
-            --estimate_all \
-            --benchmarks=all \
-                | tee ${D}/bench.txt || echo "Benchmarking failed or timed out for ${D}"
-    done
-    # Add the runtime, pipeline id, and schedule id to the feature file
-    R=$(cat ${D}/bench.txt | head -n1 | cut -d' ' -f8)
-    P=$3
-    S=$2
-    FNAME=$4
-    ${AUTOSCHED_BIN}/featurization_to_sample ${D}/${FNAME}.featurization $R $P $S ${D}/${FNAME}.sample || echo "featurization_to_sample failed for ${D} (probably because benchmarking failed)"
+    if [ -f ${D}/bench ]; then
+        export PAPI_TARGET_EVENTS="PAPI_L1_DCM,PAPI_L1_ICM,PAPI_L2_DCM,PAPI_L2_ICM,PAPI_L1_TCM,PAPI_L2_TCM,PAPI_L3_TCM,PAPI_CA_SNP,PAPI_CA_SHR,PAPI_CA_CLN,PAPI_CA_ITV,PAPI_L3_LDM,PAPI_TLB_DM,PAPI_TLB_IM,PAPI_L1_LDM,PAPI_L1_STM,PAPI_L2_LDM,PAPI_L2_STM,PAPI_PRF_DM,PAPI_MEM_WCY,PAPI_STL_ICY,PAPI_FUL_ICY,PAPI_STL_CCY,PAPI_FUL_CCY,PAPI_BR_UCN,PAPI_BR_CN,PAPI_BR_TKN,PAPI_BR_NTK,PAPI_BR_MSP,PAPI_BR_PRC,PAPI_TOT_INS,PAPI_LD_INS,PAPI_SR_INS,PAPI_BR_INS,PAPI_RES_STL,PAPI_TOT_CYC,PAPI_LST_INS,PAPI_L2_DCA,PAPI_L3_DCA,PAPI_L2_DCR,PAPI_L3_DCR,PAPI_L2_DCW,PAPI_L3_DCW,PAPI_L2_ICH,PAPI_L2_ICA,PAPI_L3_ICA,PAPI_L2_ICR,PAPI_L3_ICR,PAPI_L2_TCA,PAPI_L3_TCA,PAPI_L2_TCR,PAPI_L3_TCR,PAPI_L2_TCW,PAPI_L3_TCW,PAPI_SP_OPS,PAPI_DP_OPS,PAPI_VEC_SP,PAPI_VEC_DP,PAPI_REF_CYC"
+        export PAPI_OUTPUT_DIRECTORY=${D}
+        echo "${D}/bench exists."
+        while [[ ! -z "$PAPI_TARGET_EVENTS" ]]; do
+            result=($(python3 ${HALIDE_DISTRIB_PATH}/../paper_scripts/set_events.py))
+            export PAPI_EVENTS=${result[0]}
+            if [[ ${#result[@]} -eq 1 ]]
+            then
+                export PAPI_TARGET_EVENTS=""
+            else
+                export PAPI_TARGET_EVENTS=${result[1]}
+            fi
+
+            HL_NUM_THREADS=20 \
+                ${TIMEOUT_CMD} -k ${BENCHMARKING_TIMEOUT} ${BENCHMARKING_TIMEOUT} \
+                ${D}/bench \
+                --estimate_all \
+                --benchmarks=all \
+                    | tee ${D}/bench.txt || echo "Benchmarking failed or timed out for ${D}"
+        done
+        # Add the runtime, pipeline id, and schedule id to the feature file
+        R=$(cat ${D}/bench.txt | head -n1 | cut -d' ' -f8)
+        P=$3
+        S=$2
+        FNAME=$4
+        ${AUTOSCHED_BIN}/featurization_to_sample ${D}/${FNAME}.featurization $R $P $S ${D}/${FNAME}.sample || echo "featurization_to_sample failed for ${D} (probably because benchmarking failed)"
+    fi
 }
 
 # Don't clobber existing samples

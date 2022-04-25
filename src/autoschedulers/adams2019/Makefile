@@ -96,6 +96,21 @@ $(BIN)/retrain_cost_model: $(SRC)/retrain_cost_model.cpp \
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) -frtti -Wall -I ../support -I $(BIN)/cost_model $(OPTIMIZE) $(filter-out %.h,$^) -o $@ $(LIBHALIDE_LDFLAGS) $(USE_OPEN_MP) $(HALIDE_RPATH_FOR_BIN)
 
+
+$(BIN)/check_hash: $(SRC)/check_hash.cpp \
+				$(SRC)/ASLog.cpp \
+				$(SRC)/DefaultCostModel.h \
+				$(SRC)/DefaultCostModel.cpp \
+				$(SRC)/Weights.h \
+				$(SRC)/Weights.cpp \
+				$(SRC)/CostModel.h \
+				$(SRC)/NetworkSize.h \
+				$(AUTOSCHED_COST_MODEL_LIBS) \
+				$(AUTOSCHED_WEIGHT_OBJECTS) \
+				$(BIN)/auto_schedule_runtime.a
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) -frtti -Wall -I ../support -I $(BIN)/cost_model $(OPTIMIZE) $(filter-out %.h,$^) -o $@ $(LIBHALIDE_LDFLAGS) $(USE_OPEN_MP) $(HALIDE_RPATH_FOR_BIN)
+
 $(BIN)/featurization_to_sample: $(SRC)/featurization_to_sample.cpp
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) $< $(OPTIMIZE) -o $@ 
