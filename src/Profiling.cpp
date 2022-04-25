@@ -216,12 +216,17 @@ private:
                      << "(" << size << ") in pipeline "
                      << pipeline_name << "\n";
 
-            tasks.push_back(set_current_func(malloc_id));
+            tasks.push_back(set_current_func(idx));
             tasks.push_back(Evaluate::make(Call::make(Int(32), "halide_profiler_memory_allocate",
                                                       {profiler_pipeline_state, idx, size}, Call::Extern)));
         }
 
+        Stmt reset_id = set_current_func(stack.back());
         Stmt body = mutate(op->body);
+
+        if (track_heap_allocation) {
+            body = Block::make(reset_id, body);
+        }
 
         Expr new_expr;
         Stmt stmt;
@@ -258,7 +263,7 @@ private:
                     debug(3) << "  Free on heap: " << op->name << "(" << alloc.size << ") in pipeline " << pipeline_name << "\n";
 
                     vector<Stmt> tasks{
-                        set_current_func(free_id),
+                        set_current_func(idx),
                         Evaluate::make(Call::make(Int(32), "halide_profiler_memory_free",
                                                   {profiler_pipeline_state, idx, alloc.size}, Call::Extern)),
                         stmt,

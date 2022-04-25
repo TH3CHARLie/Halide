@@ -631,7 +631,7 @@ void State::apply_schedule(const FunctionDAG &dag, const MachineParams &params) 
 
         // Halide doesn't let you fuse an RVar with a Var, even if
         // they are both pure.
-        bool can_fuse = !(any_parallel_vars && any_parallel_rvars);
+        bool can_fuse = false;
         if (can_fuse) {
             for (size_t i = 1; i < parallel_vars.size(); i++) {
                 // Outermost, and next outermost. Preserve the inner
