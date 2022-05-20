@@ -67,6 +67,7 @@ class InjectProfiling : public IRMutator {
 
 public:
     map<string, int> indices;  // maps from func name -> index in buffer.
+    map<int, string> reverse_indices; // maps from index -> func name in buffer
 
     vector<int> stack;  // What produce nodes are we currently inside of.
 
@@ -109,6 +110,9 @@ private:
     // the same most_recently_set_func.
     int most_recently_set_func = -1;
 
+    int bilateral_grid_func_id = 0;
+
+
     struct AllocSize {
         bool on_stack;
         Expr size;
@@ -132,6 +136,7 @@ private:
         if (iter == indices.end()) {
             idx = (int)indices.size();
             indices[norm_name] = idx;
+            reverse_indices[idx] = norm_name;
         } else {
             idx = iter->second;
         }
@@ -141,6 +146,14 @@ private:
     Stmt set_current_func(int id) {
         if (most_recently_set_func == id) {
             return Evaluate::make(0);
+        }
+        map<int, string>::iterator iter = reverse_indices.find(id);
+        if (iter != reverse_indices.end()) {
+            string norm_name = iter->second;
+            if (norm_name == "bilateral_grid") {
+                id = get_func_id("bilateral_grid_" + std::to_string(bilateral_grid_func_id));
+                bilateral_grid_func_id++;
+            }
         }
         most_recently_set_func = id;
         Expr last_arg = in_leaf_task ? profiler_local_sampling_token : reinterpret(Handle(), cast<uint64_t>(0));
