@@ -13,80 +13,8 @@ namespace Halide {
 namespace Internal {
 
 using std::string;
-using std::vector;
 
 using namespace llvm;
-
-namespace {
-
-vector<llvm::Type *> llvm_types(const Closure &closure, llvm::StructType *halide_buffer_t_type, LLVMContext &context) {
-    vector<llvm::Type *> res;
-    for (const auto &v : closure.vars) {
-        res.push_back(llvm_type_of(&context, v.second));
-    }
-    for (const auto &b : closure.buffers) {
-        res.push_back(llvm_type_of(&context, b.second.type)->getPointerTo());
-        res.push_back(halide_buffer_t_type->getPointerTo());
-    }
-    return res;
-}
-
-}  // namespace
-
-StructType *build_closure_type(const Closure &closure,
-                               llvm::StructType *halide_buffer_t_type,
-                               LLVMContext *context) {
-    StructType *struct_t = StructType::create(*context, "closure_t");
-    struct_t->setBody(llvm_types(closure, halide_buffer_t_type, *context), false);
-    return struct_t;
-}
-
-void pack_closure(llvm::StructType *type,
-                  Value *dst,
-                  const Closure &closure,
-                  const Scope<Value *> &src,
-                  llvm::StructType *halide_buffer_t_type,
-                  IRBuilder<> *builder) {
-    // type, type of dst should be a pointer to a struct of the type returned by build_type
-    int idx = 0;
-
-    auto add_to_closure = [&](const std::string &name) {
-        llvm::Type *t = type->elements()[idx];
-        Value *ptr = builder->CreateConstInBoundsGEP2_32(type, dst, 0, idx++);
-        Value *val = src.get(name);
-        val = builder->CreateBitCast(val, t);
-        builder->CreateStore(val, ptr);
-    };
-
-    for (const auto &v : closure.vars) {
-        add_to_closure(v.first);
-    }
-    for (const auto &b : closure.buffers) {
-        add_to_closure(b.first);
-    }
-}
-
-void unpack_closure(const Closure &closure,
-                    Scope<Value *> &dst,
-                    llvm::StructType *type,
-                    Value *src,
-                    IRBuilder<> *builder) {
-    // type, type of src should be a pointer to a struct of the type returned by build_type
-    int idx = 0;
-
-    auto load_from_closure = [&](const std::string &name) {
-        Value *ptr = builder->CreateConstInBoundsGEP2_32(type, src, 0, idx++);
-        LoadInst *load = builder->CreateLoad(ptr->getType()->getPointerElementType(), ptr);
-        dst.push(name, load);
-        load->setName(name);
-    };
-    for (const auto &v : closure.vars) {
-        load_from_closure(v.first);
-    }
-    for (const auto &b : closure.buffers) {
-        load_from_closure(b.first);
-    }
-}
 
 llvm::Type *llvm_type_of(LLVMContext *c, Halide::Type t) {
     if (t.lanes() == 1) {
@@ -209,6 +137,7 @@ bool function_takes_user_context(const std::string &name) {
         "_halide_buffer_crop",
         "_halide_buffer_retire_crop_after_extern_stage",
         "_halide_buffer_retire_crops_after_extern_stage",
+        "_halide_hexagon_do_par_for",
     };
     for (const char *user_context_runtime_func : user_context_runtime_funcs) {
         if (name == user_context_runtime_func) {
@@ -661,16 +590,15 @@ bool get_md_string(llvm::Metadata *value, std::string &result) {
     return false;
 }
 
-void get_target_options(const llvm::Module &module, llvm::TargetOptions &options, std::string &mcpu, std::string &mattrs) {
+void get_target_options(const llvm::Module &module, llvm::TargetOptions &options) {
     bool use_soft_float_abi = false;
     get_md_bool(module.getModuleFlag("halide_use_soft_float_abi"), use_soft_float_abi);
-    get_md_string(module.getModuleFlag("halide_mcpu"), mcpu);
-    get_md_string(module.getModuleFlag("halide_mattrs"), mattrs);
     std::string mabi;
     get_md_string(module.getModuleFlag("halide_mabi"), mabi);
     bool use_pic = true;
     get_md_bool(module.getModuleFlag("halide_use_pic"), use_pic);
 
+    // FIXME: can this be migrated into `set_function_attributes_from_halide_target_options()`?
     bool per_instruction_fast_math_flags = false;
     get_md_bool(module.getModuleFlag("halide_per_instruction_fast_math_flags"), per_instruction_fast_math_flags);
 
@@ -682,11 +610,6 @@ void get_target_options(const llvm::Module &module, llvm::TargetOptions &options
     options.HonorSignDependentRoundingFPMathOption = !per_instruction_fast_math_flags;
     options.NoZerosInBSS = false;
     options.GuaranteedTailCallOpt = false;
-#if LLVM_VERSION >= 130
-    // nothing
-#else
-    options.StackAlignmentOverride = 0;
-#endif
     options.FunctionSections = true;
     options.UseInitArray = true;
     options.FloatABIType =
@@ -705,9 +628,14 @@ void clone_target_options(const llvm::Module &from, llvm::Module &to) {
         to.addModuleFlag(llvm::Module::Warning, "halide_use_soft_float_abi", use_soft_float_abi ? 1 : 0);
     }
 
-    std::string mcpu;
-    if (get_md_string(from.getModuleFlag("halide_mcpu"), mcpu)) {
-        to.addModuleFlag(llvm::Module::Warning, "halide_mcpu", llvm::MDString::get(context, mcpu));
+    std::string mcpu_target;
+    if (get_md_string(from.getModuleFlag("halide_mcpu_target"), mcpu_target)) {
+        to.addModuleFlag(llvm::Module::Warning, "halide_mcpu_target", llvm::MDString::get(context, mcpu_target));
+    }
+
+    std::string mcpu_tune;
+    if (get_md_string(from.getModuleFlag("halide_mcpu_tune"), mcpu_tune)) {
+        to.addModuleFlag(llvm::Module::Warning, "halide_mcpu_tune", llvm::MDString::get(context, mcpu_tune));
     }
 
     std::string mattrs;
@@ -733,9 +661,7 @@ std::unique_ptr<llvm::TargetMachine> make_target_machine(const llvm::Module &mod
     internal_assert(llvm_target) << "Could not create LLVM target for " << triple.str() << "\n";
 
     llvm::TargetOptions options;
-    std::string mcpu = "";
-    std::string mattrs = "";
-    get_target_options(module, options, mcpu, mattrs);
+    get_target_options(module, options);
 
     bool use_pic = true;
     get_md_bool(module.getModuleFlag("halide_use_pic"), use_pic);
@@ -744,7 +670,7 @@ std::unique_ptr<llvm::TargetMachine> make_target_machine(const llvm::Module &mod
     get_md_bool(module.getModuleFlag("halide_use_large_code_model"), use_large_code_model);
 
     auto *tm = llvm_target->createTargetMachine(module.getTargetTriple(),
-                                                mcpu, mattrs,
+                                                /*CPU target=*/"", /*Features=*/"",
                                                 options,
                                                 use_pic ? llvm::Reloc::PIC_ : llvm::Reloc::Static,
                                                 use_large_code_model ? llvm::CodeModel::Large : llvm::CodeModel::Small,
@@ -752,20 +678,27 @@ std::unique_ptr<llvm::TargetMachine> make_target_machine(const llvm::Module &mod
     return std::unique_ptr<llvm::TargetMachine>(tm);
 }
 
-void set_function_attributes_for_target(llvm::Function *fn, const Target &t) {
+void set_function_attributes_from_halide_target_options(llvm::Function &fn) {
+    llvm::Module &module = *fn.getParent();
+
+    std::string mcpu_target, mcpu_tune, mattrs;
+    get_md_string(module.getModuleFlag("halide_mcpu_target"), mcpu_target);
+    get_md_string(module.getModuleFlag("halide_mcpu_tune"), mcpu_tune);
+    get_md_string(module.getModuleFlag("halide_mattrs"), mattrs);
+
+    fn.addFnAttr("target-cpu", mcpu_target);
+    fn.addFnAttr("tune-cpu", mcpu_tune);
+    fn.addFnAttr("target-features", mattrs);
+
     // Turn off approximate reciprocals for division. It's too
     // inaccurate even for us.
-    fn->addFnAttr("reciprocal-estimates", "none");
+    fn.addFnAttr("reciprocal-estimates", "none");
 }
 
 void embed_bitcode(llvm::Module *M, const string &halide_command) {
     // Save llvm.compiler.used and remote it.
     SmallVector<Constant *, 2> used_array;
-#if LLVM_VERSION >= 130
     SmallVector<GlobalValue *, 4> used_globals;
-#else
-    SmallPtrSet<GlobalValue *, 4> used_globals;
-#endif
     llvm::Type *used_element_type = llvm::Type::getInt8Ty(M->getContext())->getPointerTo(0);
     GlobalVariable *used = collectUsedGlobalVariables(*M, used_globals, true);
     for (auto *GV : used_globals) {

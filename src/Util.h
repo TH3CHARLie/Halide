@@ -370,14 +370,13 @@ void halide_toc_impl(const char *file, int line);
 // regarding 'bool' in some compliation configurations.
 template<typename TO>
 struct StaticCast {
-    template<typename FROM, typename TO2 = TO, typename std::enable_if<!std::is_same<TO2, bool>::value>::type * = nullptr>
-    inline constexpr static TO2 value(const FROM &from) {
-        return static_cast<TO2>(from);
-    }
-
-    template<typename FROM, typename TO2 = TO, typename std::enable_if<std::is_same<TO2, bool>::value>::type * = nullptr>
-    inline constexpr static TO2 value(const FROM &from) {
-        return from != 0;
+    template<typename FROM>
+    inline constexpr static TO value(const FROM &from) {
+        if constexpr (std::is_same<TO, bool>::value) {
+            return from != 0;
+        } else {
+            return static_cast<TO>(from);
+        }
     }
 };
 
@@ -386,24 +385,29 @@ struct StaticCast {
 // or dropping of fractional parts).
 template<typename TO>
 struct IsRoundtrippable {
-    template<typename FROM, typename TO2 = TO, typename std::enable_if<!std::is_convertible<FROM, TO>::value>::type * = nullptr>
+    template<typename FROM>
     inline constexpr static bool value(const FROM &from) {
-        return false;
-    }
-
-    template<typename FROM, typename TO2 = TO, typename std::enable_if<std::is_convertible<FROM, TO>::value && std::is_arithmetic<TO>::value && std::is_arithmetic<FROM>::value && !std::is_same<TO, FROM>::value>::type * = nullptr>
-    inline constexpr static bool value(const FROM &from) {
-        return StaticCast<FROM>::value(StaticCast<TO>::value(from)) == from;
-    }
-
-    template<typename FROM, typename TO2 = TO, typename std::enable_if<std::is_convertible<FROM, TO>::value && !(std::is_arithmetic<TO>::value && std::is_arithmetic<FROM>::value && !std::is_same<TO, FROM>::value)>::type * = nullptr>
-    inline constexpr static bool value(const FROM &from) {
-        return true;
+        if constexpr (std::is_convertible<FROM, TO>::value) {
+            if constexpr (std::is_arithmetic<TO>::value &&
+                          std::is_arithmetic<FROM>::value &&
+                          !std::is_same<TO, FROM>::value) {
+                const TO to = static_cast<TO>(from);
+                const FROM roundtripped = static_cast<FROM>(to);
+                return roundtripped == from;
+            } else {
+                return true;
+            }
+        } else {
+            return false;
+        }
     }
 };
 
-/** Emit a version of a string that is a valid identifier in C (. is replaced with _) */
-std::string c_print_name(const std::string &name);
+/** Emit a version of a string that is a valid identifier in C (. is replaced with _)
+ * If prefix_underscore is true (the default), an underscore will be prepended if the
+ * input starts with an alphabetic character to avoid reserved word clashes.
+ */
+std::string c_print_name(const std::string &name, bool prefix_underscore = true);
 
 /** Return the LLVM_VERSION against which this libHalide is compiled. This is provided
  * only for internal tests which need to verify behavior; please don't use this outside

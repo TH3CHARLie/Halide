@@ -42,7 +42,8 @@ protected:
 
     void init_module() override;
 
-    std::string mcpu() const override;
+    std::string mcpu_target() const override;
+    std::string mcpu_tune() const override;
     std::string mattrs() const override;
     int isa_version;
     bool use_soft_float_abi() const override;
@@ -431,6 +432,30 @@ private:
     }
     Expr visit(const Call *op) override {
         uses_hvx = uses_hvx || op->type.is_vector();
+
+        if (op->name == "halide_do_par_for") {
+            // If we see a call to halide_do_par_for() at this point, it should mean that
+            // this statement was produced via HexagonOffload calling lower_parallel_tasks()
+            // explicitly; in this case, we won't see any parallel For statements, since they've
+            // all been transformed into closures already. To mirror the pattern above,
+            // we need to wrap the halide_do_par_for() call with an unlock/lock pair, but
+            // that's hard to do in Halide IR (we'd need to produce a Stmt to enforce the ordering,
+            // and the resulting Stmt can't easily be substituted for the Expr here). Rather than
+            // make fragile assumptions about the structure of the IR produced by lower_parallel_tasks(),
+            // we'll use a trick: we'll define a WEAK_INLINE function, _halide_hexagon_do_par_for,
+            // which simply encapsulates the unlock()/do_par_for()/lock() sequences, and swap out
+            // the call here. Since it is inlined, and since uses_hvx_var gets substituted at the end,
+            // we end up with LLVM IR that properly includes (or omits) the unlock/lock pair depending
+            // on the final value of uses_hvx_var in this scope.
+
+            internal_assert(op->call_type == Call::Extern);
+            internal_assert(op->args.size() == 4);
+
+            std::vector<Expr> args = op->args;
+            args.push_back(cast<int>(uses_hvx_var));
+
+            return Call::make(Int(32), "_halide_hexagon_do_par_for", args, Call::Extern);
+        }
         return op;
     }
 
@@ -1764,7 +1789,7 @@ Value *CodeGen_Hexagon::call_intrin(llvm::Type *result_type, const string &name,
                                       fn, std::move(args));
 }
 
-string CodeGen_Hexagon::mcpu() const {
+string CodeGen_Hexagon::mcpu_target() const {
     if (target.has_feature(Halide::Target::HVX_v66)) {
         return "hexagonv66";
     } else if (target.has_feature(Halide::Target::HVX_v65)) {
@@ -1772,6 +1797,10 @@ string CodeGen_Hexagon::mcpu() const {
     } else {
         return "hexagonv62";
     }
+}
+
+string CodeGen_Hexagon::mcpu_tune() const {
+    return mcpu_target();
 }
 
 string CodeGen_Hexagon::mattrs() const {
