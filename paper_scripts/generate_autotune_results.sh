@@ -59,7 +59,7 @@ DEFAULT_SAMPLES_DIR_NAME="${SAMPLES_DIR:-autotuned_samples}"
 CURRENT_DATE_TIME="`date +%Y-%m-%d-%H-%M-%S`";
 
 if [ -z $APP ]; then
-    APPS="bilateral_grid"
+    APPS="simple_pipeline"
     # APPS="bgu bilateral_grid camera_pipe conv_layer hist iir_blur interpolate lens_blur local_laplacian max_filter nl_means stencil_chain unsharp"
     # APPS="bgu bilateral_grid blur local_laplacian nl_means lens_blur camera_pipe hist max_filter interpolate conv_layer"
 else
