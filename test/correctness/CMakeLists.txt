@@ -86,6 +86,7 @@ tests(GROUPS correctness
       dynamic_allocation_in_gpu_kernel.cpp
       dynamic_reduction_bounds.cpp
       embed_bitcode.cpp
+      early_out.cpp
       erf.cpp
       exception.cpp
       explicit_inline_reductions.cpp
@@ -285,6 +286,7 @@ tests(GROUPS correctness
       set_custom_trace.cpp
       shadowed_bound.cpp
       shared_self_references.cpp
+      shift_by_unsigned_negated.cpp
       shifted_image.cpp
       side_effects.cpp
       simd_op_check.cpp
