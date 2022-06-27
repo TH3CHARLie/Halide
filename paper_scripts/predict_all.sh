@@ -5,7 +5,7 @@ if [ $# -ne 3 ]; then
   exit
 fi
 
-export AUTOSCHED_BIN="/home/xuanda/dev/Halide/bin"
+export AUTOSCHED_BIN="/home/xuanday/dev/Halide/bin"
 SAMPLES_DIR=${1}
 WEIGHTS_FILE=${2}
 PREDICTIONS_FILE=${3}

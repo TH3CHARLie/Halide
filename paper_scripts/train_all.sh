@@ -5,7 +5,7 @@ if [ $# -ne 5 ]; then
   exit
 fi
 
-export AUTOSCHED_BIN="/home/xuanda/dev/Halide/bin"
+export AUTOSCHED_BIN="/home/xuanday/dev/Halide/bin"
 SAMPLES_DIR=${1}
 INIT_WEIGHTS_FILE=${2}
 OUTPUT_WEIGHTS_FILE=${3}

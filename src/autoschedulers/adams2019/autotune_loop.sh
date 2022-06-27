@@ -68,7 +68,7 @@ fi
 
 # A batch of this many samples is built in parallel, and then
 # benchmarked serially.
-BATCH_SIZE=40
+BATCH_SIZE=1
 
 TIMEOUT_CMD="timeout"
 if [ $(uname -s) = "Darwin" ] && ! which $TIMEOUT_CMD 2>&1 >/dev/null; then

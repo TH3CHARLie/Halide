@@ -6,9 +6,9 @@ from scatter import plot
 
 APPS = "bilateral_grid camera_pipe conv_layer hist iir_blur interpolate lens_blur local_laplacian max_filter nl_means".split()
 # APPS = "bgu bilateral_grid camera_pipe conv_layer hist iir_blur interpolate lens_blur local_laplacian max_filter nl_means stencil_chain unsharp".split()
-ROOT_PATH = "/home/xuanda/dev/Halide/apps/"
+ROOT_PATH = "/home/xuanday/dev/Halide/apps/"
 
-OUTPUT = "/home/xuanda/dev/Halide/paper_scripts/tmp_plots"
+OUTPUT = "/home/xuanday/dev/Halide/paper_scripts/tmp_plots"
 
 
 if __name__ == "__main__":

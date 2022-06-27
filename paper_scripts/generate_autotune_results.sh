@@ -26,7 +26,7 @@ fi
 
 BEST_SCHEDULES_DIR=$(dirname $0)/best
 
-HALIDE_ROOT="/home/xuanda/dev/Halide"
+HALIDE_ROOT="/home/xuanday/dev/Halide"
 
 source $(dirname $0)/utils.sh
 
@@ -36,11 +36,11 @@ export HL_MACHINE_PARAMS=20,24000000,160
 
 # export HL_PERMIT_FAILED_UNROLL=1
 
-export AUTOSCHED_BIN="/home/xuanda/dev/Halide/bin"
+export AUTOSCHED_BIN="/home/xuanday/dev/Halide/bin"
 echo "AUTOSCHED_BIN set to ${AUTOSCHED_BIN}"
-export AUTOSCHED_SRC="/home/xuanda/dev/Halide/src/autoschedulers/adams2019"
+export AUTOSCHED_SRC="/home/xuanday/dev/Halide/src/autoschedulers/adams2019"
 echo "AUTOSCHED_SRC set to ${AUTOSCHED_SRC}"
-export HALIDE_DISTRIB_PATH="/home/xuanda/dev/Halide/distrib"
+export HALIDE_DISTRIB_PATH="/home/xuanday/dev/Halide/distrib"
 
 export SEARCH_SPACE_OPTIONS=01111
 echo "SEARCH_SPACE_OPTIONS set to ${SEARCH_SPACE_OPTIONS}"
