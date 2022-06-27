@@ -167,6 +167,10 @@ public:
     // The predicted runtimes
     Output<Buffer<float>> prediction_output{"prediction_output", 1};
 
+    Output<Buffer<float>> lower_bound_prediction_output{"lower_bound_prediction_output", 1};
+
+    Output<Buffer<float>> upper_bound_prediction_output{"upper_bound_prediction_output", 1};
+
     // The loss. L2 on relative throughput.
     Output<Buffer<float>> loss_output{"loss_output", 0};
 
@@ -388,6 +392,20 @@ public:
                      cost_of_parallelism +
                      cost_of_working_set);
 
+        Expr lower_bound_cost = (compute_cost +
+                                store_cost +
+                                load_cost +
+                                cost_of_malloc +
+                                cost_of_parallelism +
+                                cost_of_working_set) * relu1(28, w, n);
+
+        Expr upper_bound_cost = (compute_cost +
+                                store_cost +
+                                load_cost +
+                                cost_of_malloc +
+                                cost_of_parallelism +
+                                cost_of_working_set) * relu1(29, w, n);
+
         for (int i = 0; i < 32; i++) {
             cost += 0.0f * relu1(i, w, n);
         }
@@ -396,12 +414,27 @@ public:
         // Change units so that network weights are in a human-readable range.
         runtime_per_stage(n, w) = cost * 1e-9f;
 
+        Func lower_bound_runtime_per_stage;
+        lower_bound_runtime_per_stage(n, w) = lower_bound_cost * 1e-9f;
+
+        Func upper_bound_runtime_per_stage;
+        upper_bound_runtime_per_stage(n, w) = upper_bound_cost * 1e-9f;
+
         // Sum across the stages.
         Func prediction;
+        Func lower_bound_prediction;
+        Func upper_bound_prediction;
         RDom r_reduce(0, num_stages);
+        RDom lr_reduce(0, num_stages);
+        RDom ur_reduce(0, num_stages);
         prediction(n) += runtime_per_stage(n, r_reduce);
+        lower_bound_prediction(n) += lower_bound_runtime_per_stage(n, lr_reduce);
+        upper_bound_prediction(n) += upper_bound_runtime_per_stage(n, ur_reduce);
+        
 
         prediction_output(n) = prediction(n);
+        lower_bound_prediction_output(n) = lower_bound_prediction(n);
+        upper_bound_prediction_output(n) = upper_bound_prediction(n);
 
         Func err;
 
@@ -432,9 +465,15 @@ public:
             // Compute the relative true runtime and the relative predicted runtime
             Expr p1 = prediction(n) * scale;
             Expr r1 = true_runtime(n) * scale;
+            Expr lower_bound_p1 = lower_bound_prediction(n) * scale;
+            Expr upper_bound_p1 = upper_bound_prediction(n) * scale;
 
+            float alpha = 0.01;
             // Invert them to get relative throughput, and compute L2 loss.
-            Expr delta = pow(1.0f / max(p1, 1e-10f) - 1.0f / r1, 2);
+            Expr delta = pow(max(0.0f, 1.0f / r1 - 1.0f / max(lower_bound_p1, 1e-10f)), 2) 
+                         + pow(max(0.0f, 1.0f / max(upper_bound_p1, 1e-10f) - 1.0f / r1), 2) 
+                         + alpha * pow((1.0f / max(upper_bound_p1, 1e-10f) - 1.0f / max(lower_bound_p1, 1e-10f)), 2);
+            // Expr delta = pow(1.0f / max(p1, 1e-10f) - 1.0f / r1, 2);
 
             // Add the regulization with a small weight.
             err(n) = delta + 1e-5f * regularize;
@@ -475,6 +514,8 @@ public:
         batch_size.set_estimate(80);
         num_stages.set_estimate(13);
         prediction_output.set_estimates({{0, 80}});
+        lower_bound_prediction_output.set_estimates({{0, 80}});
+        upper_bound_prediction_output.set_estimates({{0, 80}});
         learning_rate.set_estimate(0.001f);
         timestep.set_estimate(37);
         pipeline_features.set_estimates({{0, head1_w}, {0, head1_h}, {0, 13}});

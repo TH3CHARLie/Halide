@@ -125,6 +125,8 @@ struct Sample {
     string filename;
     int32_t schedule_id;
     Buffer<float> schedule_features;
+    float lower_bound_prediction;
+    float upper_bound_prediction;
 };
 
 struct PipelineSample {
@@ -192,6 +194,53 @@ void save_predictions(const map<int, PipelineSample> &samples, const string &fil
     assert(!file.fail());
 
     std::cout << "Predictions saved to: " << filename << "\n";
+}
+
+void update_lower_upper_predictions(PipelineSample &sample, size_t batch_size, 
+                                    Halide::Runtime::Buffer<float> &lower_bound_prediction_buffer,
+                                    Halide::Runtime::Buffer<float> &upper_bound_prediction_buffer) {
+    auto it = sample.schedules.begin();
+    for (size_t i = 0; i < batch_size; ++i) {
+        auto &sched = it->second;
+        sched.lower_bound_prediction = lower_bound_prediction_buffer(i);
+        sched.upper_bound_prediction = upper_bound_prediction_buffer(i);
+        it++;
+    }
+}
+
+void save_lower_upper_predictions(const map<int, PipelineSample> &samples) {
+    {
+        // lower bound
+        std::ostringstream out;
+        for (const auto &p : samples) {
+            for (const auto &sched : p.second.schedules) {
+                if (sched.second.runtimes.empty()) {
+                    continue;
+                }
+                out<< sched.second.lower_bound_prediction << ", " << sched.second.runtimes[0] << "\n";
+            }
+        }
+        std::ofstream file("lower_bound_predictions.txt", std::ios_base::trunc);
+        file << out.str();
+        file.close();
+        assert(!file.fail());
+    }
+    {
+        // lower bound
+        std::ostringstream out;
+        for (const auto &p : samples) {
+            for (const auto &sched : p.second.schedules) {
+                if (sched.second.runtimes.empty()) {
+                    continue;
+                }
+                out<< sched.second.upper_bound_prediction << ", " << sched.second.runtimes[0] << "\n";
+            }
+        }
+        std::ofstream file("upper_bound_predictions.txt", std::ios_base::trunc);
+        file << out.str();
+        file.close();
+        assert(!file.fail());
+    }
 }
 
 // Load all the samples, reading filenames from stdin
@@ -486,7 +535,9 @@ int main(int argc, char **argv) {
                         size_t batch_size = std::min((size_t)1024, p.second.schedules.size());
                         size_t fastest_idx = 0;
                         Halide::Runtime::Buffer<float> runtimes(batch_size);
-
+                        Halide::Runtime::Buffer<float> lower_bound_predictions(batch_size);
+                        Halide::Runtime::Buffer<float> upper_bound_predictions(batch_size);
+                        
                         size_t first = 0;
                         // if (p.second.schedules.size() > 1024) {
                         //     first = rng() % (p.second.schedules.size() - 1024);
@@ -526,7 +577,8 @@ int main(int argc, char **argv) {
                                 it++;
                             }
                         } else {
-                            tp->evaluate_costs();
+                            tp->evaluate_costs_with_lower_upper_bounds(lower_bound_predictions, upper_bound_predictions);
+                            update_lower_upper_predictions(p.second, batch_size, lower_bound_predictions, upper_bound_predictions);
                         }
 
                         if (true) {
@@ -631,6 +683,7 @@ int main(int argc, char **argv) {
 
             if (loss_sum[best_model] < 1e-5f) {
                 save_predictions(samples, flags.predictions_file);
+                save_lower_upper_predictions(samples);
                 std::cout << "Zero loss, returning early\n";
                 return 0;
             }

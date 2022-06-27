@@ -50,6 +50,9 @@ public:
     // Evaluate all schedules in the queue.
     void evaluate_costs() override;
 
+    void evaluate_costs_with_lower_upper_bounds(Runtime::Buffer<float> &lower_bound_predictions,
+                                                Runtime::Buffer<float> &upper_bound_predictions);
+
     // Discard all schedules in the queue.
     void reset() override;
 

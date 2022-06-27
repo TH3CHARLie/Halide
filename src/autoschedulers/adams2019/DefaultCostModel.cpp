@@ -170,12 +170,15 @@ void DefaultCostModel::enqueue(int ns, Runtime::Buffer<float> *schedule_feats, d
 // 0) is the new weight, buf(_, 1) is the ADAM running average of
 // the first moment, and buf(_, 2) is the ADAM running average of
 // the second moment.
-float DefaultCostModel::backprop(const Runtime::Buffer<const float> &true_runtimes, float learning_rate) {
+float DefaultCostModel::backprop(const Runtime::Buffer<const float> &true_runtimes,
+                                 float learning_rate) {
     internal_assert(cursor != 0);
     internal_assert(pipeline_feat_queue.data());
     internal_assert(schedule_feat_queue.data());
 
     auto loss = Runtime::Buffer<float>::make_scalar();
+    Runtime::Buffer<float> lower_bound_predictions(costs.dim(0).extent());
+    Runtime::Buffer<float> upper_bound_predictions(costs.dim(0).extent());
 
     if (!head1_filter_update.data()) {
         auto weight_update_buffer = [](const Runtime::Buffer<float> &w) {
@@ -222,6 +225,8 @@ float DefaultCostModel::backprop(const Runtime::Buffer<const float> &true_runtim
                                   head2_filter_update, head2_bias_update,
                                   conv1_filter_update, conv1_bias_update,
                                   dst,
+                                  lower_bound_predictions,
+                                  upper_bound_predictions,
                                   loss);
     (void)result;
     internal_assert(result == 0);
@@ -276,6 +281,8 @@ void DefaultCostModel::evaluate_costs() {
     internal_assert(schedule_feat_queue.data());
 
     Runtime::Buffer<float> dst = costs.cropped(0, 0, cursor);
+    Runtime::Buffer<float> lower_bound_predictions(costs.dim(0).extent());
+    Runtime::Buffer<float> upper_bound_predictions(costs.dim(0).extent());
 
     auto loss = Runtime::Buffer<float>::make_scalar();
 
@@ -288,7 +295,41 @@ void DefaultCostModel::evaluate_costs() {
                             weights.head2_filter, weights.head2_bias,
                             weights.conv1_filter, weights.conv1_bias,
                             0.0f, 0, 0, nullptr,
-                            dst, loss);
+                            dst, lower_bound_predictions, upper_bound_predictions, loss);
+    (void)result;
+    internal_assert(result == 0);
+
+    for (int i = 0; i < cursor; i++) {
+        internal_assert(cost_ptrs(i));
+        *(cost_ptrs(i)) = dst(i);
+    }
+
+    cursor = 0;
+}
+
+void DefaultCostModel::evaluate_costs_with_lower_upper_bounds(Runtime::Buffer<float> &lower_bound_predictions,
+                                                              Runtime::Buffer<float> &upper_bound_predictions) {
+    if (cursor == 0 || !schedule_feat_queue.data()) {
+        return;
+    }
+
+    internal_assert(pipeline_feat_queue.data());
+    internal_assert(schedule_feat_queue.data());
+
+    Runtime::Buffer<float> dst = costs.cropped(0, 0, cursor);
+
+    auto loss = Runtime::Buffer<float>::make_scalar();
+
+    int result = cost_model(num_stages,
+                            cursor,
+                            num_cores,
+                            pipeline_feat_queue,
+                            schedule_feat_queue,
+                            weights.head1_filter, weights.head1_bias,
+                            weights.head2_filter, weights.head2_bias,
+                            weights.conv1_filter, weights.conv1_bias,
+                            0.0f, 0, 0, nullptr,
+                            dst, lower_bound_predictions, upper_bound_predictions, loss);
     (void)result;
     internal_assert(result == 0);
 
