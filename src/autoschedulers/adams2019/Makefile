@@ -107,6 +107,10 @@ $(BIN)/weightsdir_to_weightsfile: $(SRC)/weightsdir_to_weightsfile.cpp $(SRC)/We
 	@mkdir -p $(@D)
 	$(CXX) $(CXXFLAGS) $^ $(OPTIMIZE) -o $@
 
+$(BIN)/double_weights: $(SRC)/double_weights.cpp $(LIB_HALIDE) $(HALIDE_DISTRIB_PATH)/include/Halide.h
+	@mkdir -p $(@D)
+	$(CXX) $(CXXFLAGS) $(filter %.cpp,$^) $(LIBHALIDE_LDFLAGS) $(OPTIMIZE) -o $@ $(HALIDE_RPATH_FOR_BIN)
+
 # This is the value that machine_params defaults to if no custom value is specified;
 # see MachineParams::generic()
 HL_MACHINE_PARAMS ?= 20,25165824,160
