@@ -293,21 +293,28 @@ public:
         // Count up the number of things computed, applying a
         // different cost to vectors and scalars, and a different cost
         // depending on whether we were inlined.
-        Expr compute_cost = select(inlined_calls == 0,
+        Expr lower_compute_cost = select(inlined_calls == 0,
                                    (vector_size * num_vectors * relu1(0, w, n) +
                                     num_scalars * relu1(1, w, n)),
                                    (vector_size * num_vectors * relu1(2, w, n) +
                                     num_scalars * relu1(3, w, n)));
+
+        Expr upper_compute_cost = select(inlined_calls == 0,
+                                   (vector_size * num_vectors * relu1(32, w, n) +
+                                    num_scalars * relu1(33, w, n)),
+                                   (vector_size * num_vectors * relu1(34, w, n) +
+                                    num_scalars * relu1(35, w, n)));
 
         // Round up these costs according to how neatly we're using
         // our cores.
         Expr num_tasks = max(1, inner_parallelism * outer_parallelism);
         Expr tasks_per_core = num_tasks / num_cores;
         Expr idle_core_wastage = ceil(tasks_per_core) / max(1, tasks_per_core);
-        compute_cost *= idle_core_wastage;
+        lower_compute_cost *= idle_core_wastage;
+        upper_compute_cost *= idle_core_wastage;
 
         // Next comes a long list of plausible terms to capture the cost of loads.
-        Expr load_cost = (num_realizations * unique_lines_read_per_realization * relu1(5, w, n) +
+        Expr lower_load_cost = (num_realizations * unique_lines_read_per_realization * relu1(5, w, n) +
                           num_realizations * unique_bytes_read_per_realization * relu1(6, w, n) +
                           num_vectors * scalar_loads_per_vector * relu1(7, w, n) +
                           num_scalars * scalar_loads_per_scalar * relu1(8, w, n) +
@@ -319,6 +326,18 @@ public:
                           num_tasks * unique_bytes_read_per_task * relu1(14, w, n) +
                           num_tasks * unique_lines_read_per_task * relu1(15, w, n));
 
+        Expr upper_load_cost = (num_realizations * unique_lines_read_per_realization * relu1(37, w, n) +
+                          num_realizations * unique_bytes_read_per_realization * relu1(38, w, n) +
+                          num_vectors * scalar_loads_per_vector * relu1(39, w, n) +
+                          num_scalars * scalar_loads_per_scalar * relu1(40, w, n) +
+                          num_vectors * vector_loads_per_vector * relu1(41, w, n) +
+                          num_scalars * unique_bytes_read_per_vector * relu1(42, w, n) +
+                          num_vectors * unique_bytes_read_per_vector * relu1(43, w, n) +
+                          num_scalars * unique_lines_read_per_vector * relu1(44, w, n) +
+                          num_vectors * unique_lines_read_per_vector * relu1(45, w, n) +
+                          num_tasks * unique_bytes_read_per_task * relu1(46, w, n) +
+                          num_tasks * unique_lines_read_per_task * relu1(47, w, n));
+
         // Next we have the cost of stores.
         Expr lines_written_per_realization = inner_parallelism * (bytes_at_task / max(1, innermost_bytes_at_task));
 
@@ -328,27 +347,43 @@ public:
         // another core, so they will get punted out to L3 no matter
         // how small. Also use a separate term for the final stage, as
         // we never pay the cost of loading from it.
-        Expr alpha = select(inner_parallelism > 1, relu1(16, w, n),
+        Expr lower_alpha = select(inner_parallelism > 1, relu1(16, w, n),
                             w == 0, relu1(17, w, n),
                             relu1(18, w, n));
-        Expr beta = select(inner_parallelism > 1, relu1(19, w, n),
+        Expr lower_beta = select(inner_parallelism > 1, relu1(19, w, n),
                            w == 0, relu1(20, w, n),
                            relu1(21, w, n));
 
-        Expr store_cost = num_realizations * (lines_written_per_realization * alpha +
-                                              bytes_at_realization * beta);
+        Expr upper_alpha = select(inner_parallelism > 1, relu1(48, w, n),
+                            w == 0, relu1(49, w, n),
+                            relu1(50, w, n));
+        Expr upper_beta = select(inner_parallelism > 1, relu1(51, w, n),
+                           w == 0, relu1(52, w, n),
+                           relu1(53, w, n));
+
+
+        Expr lower_store_cost = num_realizations * (lines_written_per_realization * lower_alpha +
+                                                    bytes_at_realization * lower_beta);
+        Expr upper_store_cost = num_realizations * (lines_written_per_realization * upper_alpha +
+                                                    bytes_at_realization * upper_beta);
 
         // Now account for false sharing of cache lines. The
         // probability of a store hitting a cache line also hit by
         // another core is inversely proportional to
         // innermost_bytes_at_task, and the cost is paid on every
         // store.
-        Expr cost_of_false_sharing =
+        Expr lower_cost_of_false_sharing =
             select(inner_parallelism > 1,
                    relu1(22, w, n) * (num_vectors + num_scalars) / max(1, innermost_bytes_at_task),
                    0.0f);
 
-        store_cost += cost_of_false_sharing;
+        Expr upper_cost_of_false_sharing =
+            select(inner_parallelism > 1,
+                   relu1(54, w, n) * (num_vectors + num_scalars) / max(1, innermost_bytes_at_task),
+                   0.0f);
+
+        lower_store_cost += lower_cost_of_false_sharing;
+        upper_store_cost += upper_cost_of_false_sharing;
 
         // Now add a term for false sharing of pages. The maximum
         // number of threads that could all fault on the same page at
@@ -359,60 +394,63 @@ public:
         const Expr &num_page_faults = bytes_at_production;
 
         // And page faults are serviced serially, so the total CPU time gets multiplied by the thread count again!
-        Expr cost_of_page_faults = (num_page_faults * max_threads_hitting_same_page_fault *
+        Expr lower_cost_of_page_faults = (num_page_faults * max_threads_hitting_same_page_fault *
                                     inner_parallelism * outer_parallelism * relu1(23, w, n));
+        Expr upper_cost_of_page_faults = (num_page_faults * max_threads_hitting_same_page_fault *
+                                    inner_parallelism * outer_parallelism * relu1(55, w, n));
 
-        store_cost += cost_of_page_faults;
+        lower_store_cost += lower_cost_of_page_faults;
+        upper_store_cost += upper_cost_of_page_faults;
 
         // Malloc is not free, so add a cost per allocation.
-        Expr cost_of_malloc = relu1(24, w, n) * num_realizations;
+        Expr lower_cost_of_malloc = relu1(24, w, n) * num_realizations;
+        Expr upper_cost_of_malloc = relu1(56, w, n) * num_realizations;
 
         // A cost for launching a parallel task...
-        Expr cost_of_parallel_launches = num_productions * select(inner_parallelism > 1, relu1(25, w, n), 0.0f);
+        Expr lower_cost_of_parallel_launches = num_productions * select(inner_parallelism > 1, relu1(25, w, n), 0.0f);
+        Expr upper_cost_of_parallel_launches = num_productions * select(inner_parallelism > 1, relu1(57, w, n), 0.0f);
 
         // ... and an overhead per task.
-        Expr cost_of_parallel_tasks = num_productions * (inner_parallelism - 1) * relu1(26, w, n);
+        Expr lower_cost_of_parallel_tasks = num_productions * (inner_parallelism - 1) * relu1(26, w, n);
+        Expr upper_cost_of_parallel_tasks = num_productions * (inner_parallelism - 1) * relu1(58, w, n);
 
-        Expr cost_of_parallelism = cost_of_parallel_tasks + cost_of_parallel_launches;
+        Expr lower_cost_of_parallelism = lower_cost_of_parallel_launches + lower_cost_of_parallel_tasks;
+        Expr upper_cost_of_parallelism = upper_cost_of_parallel_launches + upper_cost_of_parallel_tasks;
 
         // Make it easier for the model to penalize working sets that
         // start to fall out of cache by giving it a term that gets
         // multiplied by the working set.
-        Expr cost_of_working_set = working_set * relu1(27, w, n);
+        Expr lower_cost_of_working_set = working_set * relu1(27, w, n);
+        Expr upper_cost_of_working_set = working_set * relu1(59, w, n);
 
         // FIXME: For our best set of trained weights, store_cost was
         // accidentally in the list below twice, so we double it here
         // in order to not have to retrain.
-        store_cost *= 2;
+        lower_store_cost *= 2;
+        upper_store_cost *= 2;
 
-        Expr cost = (compute_cost +
-                     store_cost +
-                     load_cost +
-                     cost_of_malloc +
-                     cost_of_parallelism +
-                     cost_of_working_set);
 
-        Expr lower_bound_cost = (compute_cost +
-                                store_cost +
-                                load_cost +
-                                cost_of_malloc +
-                                cost_of_parallelism +
-                                cost_of_working_set) * relu1(28, w, n);
+        Expr lower_bound_cost = (lower_compute_cost +
+                                lower_store_cost +
+                                lower_load_cost +
+                                lower_cost_of_malloc +
+                                lower_cost_of_parallelism +
+                                lower_cost_of_working_set);
 
-        Expr upper_bound_cost = (compute_cost +
-                                store_cost +
-                                load_cost +
-                                cost_of_malloc +
-                                cost_of_parallelism +
-                                cost_of_working_set) * relu1(29, w, n);
+        Expr upper_bound_cost = (upper_compute_cost +
+                                upper_store_cost +
+                                upper_load_cost +
+                                upper_cost_of_malloc +
+                                upper_cost_of_parallelism +
+                                upper_cost_of_working_set);
 
-        for (int i = 0; i < 32; i++) {
-            cost += 0.0f * relu1(i, w, n);
+        for (int i = 0; i < 64; i++) {
+            lower_bound_cost += 0.0f * relu1(i, w, n);
         }
 
         Func runtime_per_stage;
         // Change units so that network weights are in a human-readable range.
-        runtime_per_stage(n, w) = cost * 1e-9f;
+        runtime_per_stage(n, w) = lower_bound_cost * 1e-9f;
 
         Func lower_bound_runtime_per_stage;
         lower_bound_runtime_per_stage(n, w) = lower_bound_cost * 1e-9f;
@@ -463,7 +501,6 @@ public:
             Expr scale = 1.0f / true_runtime(n2);
 
             // Compute the relative true runtime and the relative predicted runtime
-            Expr p1 = prediction(n) * scale;
             Expr r1 = true_runtime(n) * scale;
             Expr lower_bound_p1 = lower_bound_prediction(n) * scale;
             Expr upper_bound_p1 = upper_bound_prediction(n) * scale;
@@ -473,7 +510,6 @@ public:
             Expr delta = pow(max(0.0f, 1.0f / r1 - 1.0f / max(lower_bound_p1, 1e-10f)), 2) 
                          + pow(max(0.0f, 1.0f / max(upper_bound_p1, 1e-10f) - 1.0f / r1), 2) 
                          + alpha * pow((1.0f / max(upper_bound_p1, 1e-10f) - 1.0f / max(lower_bound_p1, 1e-10f)), 2);
-            // Expr delta = pow(1.0f / max(p1, 1e-10f) - 1.0f / r1, 2);
 
             // Add the regulization with a small weight.
             err(n) = delta + 1e-5f * regularize;
