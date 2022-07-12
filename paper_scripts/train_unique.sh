@@ -1,7 +1,7 @@
 #!/bin/bash
 
-if [ $# -ne 6 ]; then
-  echo "Usage: $0 samples_dir init_weights_file output_weights_file predictions_file num_epochs sample_file"
+if [ $# -ne 7 ]; then
+  echo "Usage: $0 samples_dir init_weights_file output_weights_file predictions_file num_epochs sample_file alpha"
   exit
 fi
 
@@ -12,6 +12,7 @@ OUTPUT_WEIGHTS_FILE=${3}
 PREDICTIONS_FILE=${4}
 NUM_EPOCHS=${5}
 SAMPLE_FILE=${6}
+ALPHA=${7}
 PREDICTIONS_WITH_FILENAMES_FILE="${PREDICTIONS_FILE}_with_filename"
 echo
 echo "Samples directory: ${SAMPLES_DIR}"
@@ -36,6 +37,7 @@ cat ${SAMPLE_FILE} | \
         --predictions_file=${PREDICTIONS_WITH_FILENAMES_FILE} \
         --verbose="0" \
         --partition_schedules="0" \
-        --limit="0"
+        --limit="0" \
+        --alpha=${ALPHA}
 
 awk -F", " '{printf("%f, %f\n", $2, $3);}' ${PREDICTIONS_WITH_FILENAMES_FILE} > ${PREDICTIONS_FILE}

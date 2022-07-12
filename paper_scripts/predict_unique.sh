@@ -33,6 +33,7 @@ cat ${SAMPLE_FILE} | \
         --predictions_file=${PREDICTIONS_WITH_FILENAMES_FILE} \
         --verbose="0" \
         --partition_schedules="0" \
-        --limit="0"
+        --limit="0" \
+        --alpha="0.001"
 
 awk -F", " '{printf("%f, %f\n", $2, $3);}' ${PREDICTIONS_WITH_FILENAMES_FILE} > ${PREDICTIONS_FILE}

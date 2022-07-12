@@ -39,6 +39,7 @@ struct Flags {
     bool verbose;
     bool partition_schedules;
     int limit;
+    float alpha = 0.001f;
 
     Flags(int argc, char **argv) {
         cmdline::parser a;
@@ -59,6 +60,7 @@ struct Flags {
         a.add<bool>("verbose");
         a.add<bool>("partition_schedules");
         a.add<int>("limit");
+        a.add<float>("alpha");
 
         a.parse_check(argc, argv);  // exits if parsing fails
 
@@ -74,6 +76,7 @@ struct Flags {
         verbose = a.exist("verbose") && a.get<bool>("verbose");
         partition_schedules = a.exist("partition_schedules") && a.get<bool>("partition_schedules");
         limit = a.get<int>("limit");
+        alpha = a.get<float>("alpha");
 
         if (epochs <= 0) {
             std::cerr << "--epochs must be specified and > 0.\n";
@@ -559,7 +562,7 @@ int main(int argc, char **argv) {
 
                         float loss = 0.0f;
                         if (train & !predict_only) {
-                            loss = tp->backprop(runtimes, learning_rate);
+                            loss = tp->backprop(runtimes, learning_rate, flags.alpha);
                             assert(!std::isnan(loss));
                             loss_sum[model] += loss;
                             loss_sum_counter[model]++;

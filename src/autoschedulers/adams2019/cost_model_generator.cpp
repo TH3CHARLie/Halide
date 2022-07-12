@@ -161,6 +161,8 @@ public:
     // reference point for computing relative throughput.
     Input<int> reference{"reference", 0};
 
+    Input<float> alpha{"alpha", 0.001f};
+
     // The true runtimes obtained by benchmarking.
     Input<Buffer<float>> true_runtime{"true_runtime", 1};
 
@@ -505,7 +507,6 @@ public:
             Expr lower_bound_p1 = lower_bound_prediction(n) * scale;
             Expr upper_bound_p1 = upper_bound_prediction(n) * scale;
 
-            float alpha = 0.01;
             // Invert them to get relative throughput, and compute L2 loss.
             Expr delta = pow(max(0.0f, 1.0f / r1 - 1.0f / max(lower_bound_p1, 1e-10f)), 2) 
                          + pow(max(0.0f, 1.0f / max(upper_bound_p1, 1e-10f) - 1.0f / r1), 2) 

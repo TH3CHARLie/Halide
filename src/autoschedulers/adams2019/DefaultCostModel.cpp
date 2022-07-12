@@ -171,7 +171,7 @@ void DefaultCostModel::enqueue(int ns, Runtime::Buffer<float> *schedule_feats, d
 // the first moment, and buf(_, 2) is the ADAM running average of
 // the second moment.
 float DefaultCostModel::backprop(const Runtime::Buffer<const float> &true_runtimes,
-                                 float learning_rate) {
+                                 float learning_rate, float alpha) {
     internal_assert(cursor != 0);
     internal_assert(pipeline_feat_queue.data());
     internal_assert(schedule_feat_queue.data());
@@ -220,6 +220,7 @@ float DefaultCostModel::backprop(const Runtime::Buffer<const float> &true_runtim
                                   weights.conv1_filter, weights.conv1_bias,
                                   learning_rate, timestep++,
                                   fastest_idx,
+                                  alpha,
                                   true_runtimes.alias(),
                                   head1_filter_update, head1_bias_update,
                                   head2_filter_update, head2_bias_update,
@@ -294,7 +295,7 @@ void DefaultCostModel::evaluate_costs() {
                             weights.head1_filter, weights.head1_bias,
                             weights.head2_filter, weights.head2_bias,
                             weights.conv1_filter, weights.conv1_bias,
-                            0.0f, 0, 0, nullptr,
+                            0.0f, 0, 0, 0.0f, nullptr,
                             dst, lower_bound_predictions, upper_bound_predictions, loss);
     (void)result;
     internal_assert(result == 0);
@@ -328,7 +329,7 @@ void DefaultCostModel::evaluate_costs_with_lower_upper_bounds(Runtime::Buffer<fl
                             weights.head1_filter, weights.head1_bias,
                             weights.head2_filter, weights.head2_bias,
                             weights.conv1_filter, weights.conv1_bias,
-                            0.0f, 0, 0, nullptr,
+                            0.0f, 0, 0, 0.0f, nullptr,
                             dst, lower_bound_predictions, upper_bound_predictions, loss);
     (void)result;
     internal_assert(result == 0);
