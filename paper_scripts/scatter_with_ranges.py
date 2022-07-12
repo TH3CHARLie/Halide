@@ -53,7 +53,7 @@ def plot(predictions_file, app, output_dir, lower_bound, upper_bound, name):
     for tick in axis.get_major_ticks():
       tick.label.set_fontsize(7)
 
-  filename = "{}/{}.png".format(output_dir, app)
+  filename = "{}/{}.png".format(output_dir, name + "_" + app)
   plt.savefig(filename, dpi=200)
   print("Saved scatter plot to {}".format(filename))
 
@@ -65,4 +65,5 @@ if __name__ == "__main__":
   parser.add_argument("--upper", type=str, required=True)
 
   args = parser.parse_args()
-  plot(args.lower, args.app, args.output, args.lower, args.upper, "Lower Bound")
+  plot(args.lower, args.app, args.output, args.lower, args.upper, "Lower_bound")
+  plot(args.upper, args.app, args.output, args.lower, args.upper, "Upper_bound")
