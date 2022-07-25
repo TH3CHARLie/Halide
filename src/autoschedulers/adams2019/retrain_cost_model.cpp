@@ -542,9 +542,9 @@ int main(int argc, char **argv) {
                         Halide::Runtime::Buffer<float> upper_bound_predictions(batch_size);
                         
                         size_t first = 0;
-                        // if (p.second.schedules.size() > 1024) {
-                        //     first = rng() % (p.second.schedules.size() - 1024);
-                        // }
+                        if (p.second.schedules.size() > 1024) {
+                            first = rng() % (p.second.schedules.size() - 1024);
+                        }
 
                         auto it = p.second.schedules.begin();
                         std::advance(it, first);
