@@ -1,11 +1,13 @@
 import sys
 import os
 
-APPS = ["bgu", "bilateral_grid", "camera_pipe", "hist", "iir_blur", "local_laplacian", "max_filter", "nl_means", "stencil_chain"]
+APPS = ["bgu", "bilateral_grid", "camera_pipe", "hist", "iir_blur", "lens_blur", "local_laplacian", "max_filter", "nl_means", "stencil_chain"]
 
 for app in APPS:
-    if app == "nl_means":
-        continue
+    command = f'find /home/xuanday/dev/data-profiler-off/ -name "{app}_*.sample" > {app}_samples.txt'
+    os.system(command)
+
+for app in APPS:
     mkdir_command = f"mkdir -p {app}/"
     os.system(mkdir_command)
     for other_app in APPS:
