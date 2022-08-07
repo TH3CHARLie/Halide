@@ -2,7 +2,6 @@ import sys
 import os
 
 APPS = ["bgu", "bilateral_grid", "camera_pipe", "hist", "iir_blur", "lens_blur", "local_laplacian", "max_filter", "nl_means", "stencil_chain"]
-# APPS = ["lens_blur",]
 
 for app in APPS:
     os.system(f"bash /home/xuanday/dev/Halide/paper_scripts/train_unique.sh . wrong.weights {app}/tmp.weights {app}/training_prediction 10 {app}_samples.txt 0.001 | tee {app}/tmp.log")
