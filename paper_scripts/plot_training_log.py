@@ -23,9 +23,23 @@ if __name__ == "__main__":
     plt.savefig("training_unique_loss.png", dpi=200)
 
     plt.figure()
+    plt.plot(epoches[-2000:], losses[-2000:])
+    plt.title(f"Training Loss curve of {app} (on unique samples) on Tail Iters")
+    plt.xlabel("Epoch")
+    plt.ylabel("Training Loss")
+    plt.savefig("training_unique_loss_tail.png", dpi=200)
+
+    plt.figure()
     losses = [math.log2(x) for x in losses]
     plt.plot(epoches, losses)
     plt.title(f"Training Loss curve of {app} (on unique samples)")
     plt.xlabel("Epoch")
     plt.ylabel("Training Loss (log2 scaled)")
     plt.savefig("training_unique_loss_log.png", dpi=200)
+
+    plt.figure()
+    plt.plot(epoches[-2000:], losses[-2000:])
+    plt.title(f"Training Loss curve of {app} (on unique samples) on Tail Iters")
+    plt.xlabel("Epoch")
+    plt.ylabel("Training Loss (log2 scaled)")
+    plt.savefig("training_unique_loss_log_tail.png", dpi=200)

@@ -15,4 +15,4 @@ for app in APPS:
             continue
         os.system(f"cat {other_app}_samples.txt >> {app}/{app}_hold_one_out_samples.txt")
     print(f"Training hold-one-out weights for {app}")
-    os.system(f"bash /home/xuanday/dev/Halide/paper_scripts/train_unique.sh . wrong.weights {app}/updated_1e-3.weights {app}/training_prediction 10000 {app}/{app}_hold_one_out_samples.txt 0.001 | tee {app}/training_loss.txt")
+    os.system(f"bash /home/xuanday/dev/Halide/paper_scripts/train_unique.sh . wrong.weights {app}/updated_1e-3.weights {app}/training_prediction 15000 {app}/{app}_hold_one_out_samples.txt 0.001 | tee {app}/training_loss.txt")
