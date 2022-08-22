@@ -171,12 +171,19 @@ void DefaultCostModel::enqueue(int ns, Runtime::Buffer<float> *schedule_feats, d
 // the first moment, and buf(_, 2) is the ADAM running average of
 // the second moment.
 float DefaultCostModel::backprop(const Runtime::Buffer<const float> &true_runtimes,
-                                 float learning_rate, float alpha) {
+                                 float learning_rate, float alpha,
+                                 float *lower_bound_loss_term1_ptr, float *lower_bound_loss_term2_ptr,
+                                 float *upper_bound_loss_term1_ptr, float *upper_bound_loss_term2_ptr) {
     internal_assert(cursor != 0);
     internal_assert(pipeline_feat_queue.data());
     internal_assert(schedule_feat_queue.data());
 
     auto loss = Runtime::Buffer<float>::make_scalar();
+    auto lower_bound_loss_term1 = Runtime::Buffer<float>::make_scalar();
+    auto lower_bound_loss_term2 = Runtime::Buffer<float>::make_scalar();
+    auto upper_bound_loss_term1 = Runtime::Buffer<float>::make_scalar();
+    auto upper_bound_loss_term2 = Runtime::Buffer<float>::make_scalar();
+
     Runtime::Buffer<float> lower_bound_predictions(costs.dim(0).extent());
     Runtime::Buffer<float> upper_bound_predictions(costs.dim(0).extent());
 
@@ -228,7 +235,11 @@ float DefaultCostModel::backprop(const Runtime::Buffer<const float> &true_runtim
                                   dst,
                                   lower_bound_predictions,
                                   upper_bound_predictions,
-                                  loss);
+                                  loss,
+                                  lower_bound_loss_term1,
+                                  lower_bound_loss_term2,
+                                  upper_bound_loss_term1,
+                                  upper_bound_loss_term2);
     (void)result;
     internal_assert(result == 0);
 
@@ -270,6 +281,10 @@ float DefaultCostModel::backprop(const Runtime::Buffer<const float> &true_runtim
 
     internal_assert(cursor != 0);
 
+    *lower_bound_loss_term1_ptr = lower_bound_loss_term1();
+    *lower_bound_loss_term2_ptr = lower_bound_loss_term2();
+    *upper_bound_loss_term1_ptr = upper_bound_loss_term1();
+    *upper_bound_loss_term2_ptr = upper_bound_loss_term2();
     return loss();
 }
 
@@ -286,6 +301,10 @@ void DefaultCostModel::evaluate_costs() {
     Runtime::Buffer<float> upper_bound_predictions(costs.dim(0).extent());
 
     auto loss = Runtime::Buffer<float>::make_scalar();
+    auto lower_bound_loss_term1 = Runtime::Buffer<float>::make_scalar();
+    auto lower_bound_loss_term2 = Runtime::Buffer<float>::make_scalar();
+    auto upper_bound_loss_term1 = Runtime::Buffer<float>::make_scalar();
+    auto upper_bound_loss_term2 = Runtime::Buffer<float>::make_scalar();
 
     int result = cost_model(num_stages,
                             cursor,
@@ -296,7 +315,11 @@ void DefaultCostModel::evaluate_costs() {
                             weights.head2_filter, weights.head2_bias,
                             weights.conv1_filter, weights.conv1_bias,
                             0.0f, 0, 0, 0.0f, nullptr,
-                            dst, lower_bound_predictions, upper_bound_predictions, loss);
+                            dst, lower_bound_predictions, upper_bound_predictions, loss,
+                            lower_bound_loss_term1,
+                            lower_bound_loss_term2,
+                            upper_bound_loss_term1,
+                            upper_bound_loss_term2);
     (void)result;
     internal_assert(result == 0);
 
@@ -320,6 +343,10 @@ void DefaultCostModel::evaluate_costs_with_lower_upper_bounds(Runtime::Buffer<fl
     Runtime::Buffer<float> dst = costs.cropped(0, 0, cursor);
 
     auto loss = Runtime::Buffer<float>::make_scalar();
+    auto lower_bound_loss_term1 = Runtime::Buffer<float>::make_scalar();
+    auto lower_bound_loss_term2 = Runtime::Buffer<float>::make_scalar();
+    auto upper_bound_loss_term1 = Runtime::Buffer<float>::make_scalar();
+    auto upper_bound_loss_term2 = Runtime::Buffer<float>::make_scalar();
 
     int result = cost_model(num_stages,
                             cursor,
@@ -330,7 +357,11 @@ void DefaultCostModel::evaluate_costs_with_lower_upper_bounds(Runtime::Buffer<fl
                             weights.head2_filter, weights.head2_bias,
                             weights.conv1_filter, weights.conv1_bias,
                             0.0f, 0, 0, 0.0f, nullptr,
-                            dst, lower_bound_predictions, upper_bound_predictions, loss);
+                            dst, lower_bound_predictions, upper_bound_predictions, loss,
+                            lower_bound_loss_term1,
+                            lower_bound_loss_term2,
+                            upper_bound_loss_term1,
+                            upper_bound_loss_term2);
     (void)result;
     internal_assert(result == 0);
 

@@ -176,6 +176,16 @@ public:
     // The loss. L2 on relative throughput.
     Output<Buffer<float>> loss_output{"loss_output", 0};
 
+    Output<Buffer<float>> lower_bound_loss_term1_output{"lower_bound_loss_term1_output", 0};
+
+    Output<Buffer<float>> lower_bound_loss_term2_output{"lower_bound_loss_term2_output", 0};
+
+    Output<Buffer<float>> upper_bound_loss_term1_output{"upper_bound_loss_term1_output", 0};
+
+    Output<Buffer<float>> upper_bound_loss_term2_output{"upper_bound_loss_term2_output", 0};
+
+
+
     // Zero pad alone the last dimension of a Func
     Func pad_stages(const Func &f, const Expr &stages) {
         Halide::Region bounds(f.dimensions());
@@ -477,9 +487,14 @@ public:
         upper_bound_prediction_output(n) = upper_bound_prediction(n);
 
         Func err;
+        Func lower_err1, lower_err2, upper_err1, upper_err2;
 
         if (!training) {
             loss_output() = 0.0f;
+            lower_bound_loss_term1_output() = 0.0f;
+            lower_bound_loss_term2_output() = 0.0f;
+            upper_bound_loss_term1_output() = 0.0f;
+            upper_bound_loss_term2_output() = 0.0f;
         } else {
 
             // The tail end of the reverse-mode pipeline
@@ -508,17 +523,31 @@ public:
             Expr upper_bound_p1 = upper_bound_prediction(n) * scale;
 
             // Invert them to get relative throughput, and compute L2 loss.
-            Expr delta = pow(max(0.0f, 1.0f / r1 - 1.0f / max(lower_bound_p1, 1e-10f)), 2) 
-                         + pow(max(0.0f, 1.0f / max(upper_bound_p1, 1e-10f) - 1.0f / r1), 2) 
-                         + alpha * pow((1.0f / max(upper_bound_p1, 1e-10f) - 1.0f / max(lower_bound_p1, 1e-10f)), 2);
-
+            Expr lower_bound_delta_term1 = pow(max(0.0f, 1.0f / r1 - 1.0f / max(lower_bound_p1, 1e-10f)), 2); 
+            Expr lower_bound_delta_term2 = alpha * pow((1.0f / max(lower_bound_p1, 1e-10f) - 1.0f / r1), 2);
+            Expr upper_bound_delta_term1 = pow(max(0.0f, 1.0f / max(upper_bound_p1, 1e-10f) - 1.0f / r1), 2);
+            Expr upper_bound_delta_term2 = alpha * pow((1.0f / max(upper_bound_p1, 1e-10f) - 1.0f / r1), 2);
+            Expr delta = lower_bound_delta_term1 + lower_bound_delta_term2 + upper_bound_delta_term1 + upper_bound_delta_term2;
             // Add the regulization with a small weight.
             err(n) = delta + 1e-5f * regularize;
+            lower_err1(n) = lower_bound_delta_term1 + 1e-5f * regularize;
+            lower_err2(n) = lower_bound_delta_term2 + 1e-5f * regularize;
+            upper_err1(n) = upper_bound_delta_term1 + 1e-5f * regularize;
+            upper_err2(n) = upper_bound_delta_term2 + 1e-5f * regularize;
+
 
             // Sum the errors over the batch.
             Expr loss = sum(err(r_batch));
+            Expr lower_term1_loss = sum(lower_err1(r_batch));
+            Expr lower_term2_loss = sum(lower_err2(r_batch));
+            Expr upper_term1_loss = sum(upper_err1(r_batch));
+            Expr upper_term2_loss = sum(upper_err2(r_batch));
 
             loss_output() = loss;
+            lower_bound_loss_term1_output() = lower_term1_loss;
+            lower_bound_loss_term2_output() = lower_term2_loss;
+            upper_bound_loss_term1_output() = upper_term1_loss;
+            upper_bound_loss_term2_output() = upper_term2_loss;
 
             // Compute derivatives of the loss, and backpropagate them
             // to the model weights.

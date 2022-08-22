@@ -57,7 +57,9 @@ public:
     void reset() override;
 
     // Update model weights using true measured runtimes.
-    float backprop(const Runtime::Buffer<const float> &true_runtimes, float learning_rate, float alpha);
+    float backprop(const Runtime::Buffer<const float> &true_runtimes, float learning_rate, float alpha, 
+                   float *lower_bound_loss_term1_ptr, float *lower_bound_loss_term2_ptr,
+                   float *upper_bound_loss_term1_ptr, float *upper_bound_loss_term2_ptr);
 
     // Save/Load the model weights to/from disk.
     void save_weights();

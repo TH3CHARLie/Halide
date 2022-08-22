@@ -498,6 +498,10 @@ int main(int argc, char **argv) {
 
     for (float learning_rate : flags.rates) {
         float loss_sum[kModels] = {0}, loss_sum_counter[kModels] = {0};
+        float lower_bound_loss_term1_sum[kModels] = {0}, lower_bound_loss_term1_counter[kModels] = {0};
+        float lower_bound_loss_term2_sum[kModels] = {0}, lower_bound_loss_term2_counter[kModels] = {0};
+        float upper_bound_loss_term1_sum[kModels] = {0}, upper_bound_loss_term1_counter[kModels] = {0};
+        float upper_bound_loss_term2_sum[kModels] = {0}, upper_bound_loss_term2_counter[kModels] = {0}; 
         float correct_ordering_rate_sum[kModels] = {0};
         float correct_ordering_rate_count[kModels] = {0};
         float v_correct_ordering_rate_sum[kModels] = {0};
@@ -561,12 +565,27 @@ int main(int argc, char **argv) {
                         }
 
                         float loss = 0.0f;
+                        float lower_bound_loss_term1 = 0.0f, lower_bound_loss_term2 = 0.0f,
+                              upper_bound_loss_term1 = 0.0f, upper_bound_loss_term2 = 0.0f;
                         if (train & !predict_only) {
-                            loss = tp->backprop(runtimes, learning_rate, flags.alpha);
+                            loss = tp->backprop(runtimes, learning_rate, flags.alpha,
+                                                &lower_bound_loss_term1,
+                                                &lower_bound_loss_term2,
+                                                &upper_bound_loss_term1,
+                                                &upper_bound_loss_term2);
                             assert(!std::isnan(loss));
                             loss_sum[model] += loss;
                             loss_sum_counter[model]++;
-
+                            lower_bound_loss_term1_sum[model] += lower_bound_loss_term1;
+                            lower_bound_loss_term2_sum[model] += lower_bound_loss_term2;
+                            upper_bound_loss_term1_sum[model] += upper_bound_loss_term1;
+                            upper_bound_loss_term2_sum[model] += upper_bound_loss_term2;
+                            
+                            lower_bound_loss_term1_counter[model]++;
+                            lower_bound_loss_term2_counter[model]++;
+                            upper_bound_loss_term1_counter[model]++;
+                            upper_bound_loss_term2_counter[model]++;
+                            
                             auto it = p.second.schedules.begin();
                             std::advance(it, first);
                             for (size_t j = 0; j < batch_size; j++) {
@@ -683,6 +702,41 @@ int main(int argc, char **argv) {
             }
 
             tpp[best_model]->save_weights();
+            std::cout << "Epoch: " << e << " ";
+            std::cout << "Lower_Bound_Term_1_Loss: ";
+            for (int model = 0; model < kModels; model++) {
+                std::cout << lower_bound_loss_term1_sum[model] / lower_bound_loss_term1_counter[model] << " ";
+                lower_bound_loss_term1_sum[model] *= 0.9f;
+                lower_bound_loss_term1_counter[model] *= 0.9f;
+            }
+            std::cout << "\n";
+
+            std::cout << "Epoch: " << e << " ";
+            std::cout << "Lower_Bound_Term_2_Loss: ";
+            for (int model = 0; model < kModels; model++) {
+                std::cout << lower_bound_loss_term2_sum[model] / lower_bound_loss_term2_counter[model] << " ";
+                lower_bound_loss_term2_sum[model] *= 0.9f;
+                lower_bound_loss_term2_counter[model] *= 0.9f;
+            }
+            std::cout << "\n";
+
+            std::cout << "Epoch: " << e << " ";
+            std::cout << "Upper_Bound_Term_1_Loss: ";
+            for (int model = 0; model < kModels; model++) {
+                std::cout << upper_bound_loss_term1_sum[model] / upper_bound_loss_term1_counter[model] << " ";
+                upper_bound_loss_term1_sum[model] *= 0.9f;
+                upper_bound_loss_term1_counter[model] *= 0.9f;
+            }
+            std::cout << "\n";
+
+            std::cout << "Epoch: " << e << " ";
+            std::cout << "Upper_Bound_Term_2_Loss: ";
+            for (int model = 0; model < kModels; model++) {
+                std::cout << upper_bound_loss_term2_sum[model] / upper_bound_loss_term2_counter[model] << " ";
+                upper_bound_loss_term2_sum[model] *= 0.9f;
+                upper_bound_loss_term2_counter[model] *= 0.9f;
+            }
+            std::cout << "\n";
 
             if (loss_sum[best_model] < 1e-5f) {
                 save_predictions(samples, flags.predictions_file);
