@@ -1,12 +1,21 @@
 import sys
 import math
+import argparse
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--input', required=True, action="store", help="path to training log which contains unique sample output")
+    parser.add_argument('--prefix', required=True, action="store", help="path to local fs where samples are going to be stored")
+    parser.add_argument('--parse-app-name', dest='parse_app_name', action="store_true", help="whether or not parse the app name")
+    parser.set_defaults(parse_app_name=False)
+    args = parser.parse_args()
+    return args
 
 if __name__ == "__main__":
-    infile = sys.argv[1]
-    prefix = sys.argv[2]
-    flag = False
-    if len(sys.argv) > 3:
-        flag = True
+    args = parse_args()
+    infile = args.input
+    prefix = args.prefix
+    parse_app_name = args.parse_app_name
     paths = []
     with open(infile, "r") as f:
         for line in f:
@@ -17,7 +26,7 @@ if __name__ == "__main__":
     for path in paths:
         batch_id = int(path[path.find("batch") + 6 : path.find("batch") + 10])
         sample_id = int(path[path.find("sample") + 7 : path.find("sample") + 11])
-        if flag:
+        if parse_app_name:
             app_name = path[: path.find("batch") - 1]
             new_path = prefix + f"/{app_name}/{path}"
         else:

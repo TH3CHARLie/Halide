@@ -1,19 +1,34 @@
 import sys
 import os
+import argparse
 
-APPS = ["bgu", "bilateral_grid", "camera_pipe", "hist", "iir_blur", "lens_blur", "local_laplacian", "max_filter", "nl_means", "stencil_chain"]
+# APPS = ["bgu", "bilateral_grid", "camera_pipe", "hist", "iir_blur", "lens_blur", "local_laplacian", "max_filter", "nl_means", "stencil_chain"]
+APPS = ["camera_pipe", "hist", "iir_blur", "max_filter", "stencil_chain"]
 
-BATCH_SIZE = 40
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--source', required=True, action="store", help="path to sensei fs where samples are stored")
+    parser.add_argument('--target', required=True, action="store", help="path to local fs where samples are going to be stored")
+    args = parser.parse_args()
+    return args
 
-NUM_BATCH = 1000
 
-for app in APPS:
-    mkdir_command = f"mkdir -p /home/xuanday/dev/data-profiler-off/{app}/"
-    os.system(mkdir_command)
-    for i in range(1, NUM_BATCH + 1):
-        for j in range(0, BATCH_SIZE):
-            format_i = "{:04d}".format(i)
-            format_j = "{:04d}".format(j)
-            command = f"cp /sensei-fs/users/xuanday/data-profiler-off/{app}/autotuned_samples/{app}_batch_{format_i}_sample_{format_j}.sample /home/xuanday/dev/data-profiler-off/{app}/"
-            print(command)
-            os.system(command)
+def main():
+    args = parse_args()
+    source = args.source
+    target = args.target
+    for app in APPS:
+        mkdir_command = f"mkdir -p {target}/{app}/"
+        os.system(mkdir_command)
+        os.system(f'find {source}/{app} -name "*.sample" > sensei_fs_{app}_samples.txt')
+        with open(f"sensei_fs_{app}_samples.txt", "r") as f:
+            for line in f:
+                filename = line.strip()
+                copy_command = f"cp {filename} {target}/{app}"
+                print(copy_command)
+                os.system(copy_command)
+        os.system(f"rm sensei_fs_{app}_samples.txt")
+
+
+if __name__ == "__main__":
+    main()
