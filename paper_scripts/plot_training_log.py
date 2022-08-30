@@ -1,4 +1,3 @@
-import numpy as np
 import sys
 import matplotlib.pyplot as plt
 import math
@@ -7,7 +6,8 @@ import math
 if __name__ == "__main__":
     infile = sys.argv[1]
     app = sys.argv[2]
-    loss_name = sys.argv[3] if len(sys.argv) > 3 else "Loss"
+    offset = int(sys.argv[3])
+    loss_name = sys.argv[4] if len(sys.argv) > 4 else "Loss"
     epoches = []
     losses = []
     with open(infile, "r") as f:
@@ -15,7 +15,7 @@ if __name__ == "__main__":
             tokens = line.split()
             if len(tokens) > 1 and tokens[0] == "Epoch:" and tokens[2] == f"{loss_name}:":
                 epoches.append(float(tokens[1]))
-                losses.append(float(tokens[3]))
+                losses.append(float(tokens[3 + offset]))
     plt.figure()
     plt.plot(epoches, losses)
     plt.title(f"Training {loss_name} curve of {app} (on unique samples)")

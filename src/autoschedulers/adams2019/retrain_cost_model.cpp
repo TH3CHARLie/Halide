@@ -120,7 +120,7 @@ struct Flags {
     }
 };
 
-constexpr int kModels = 1;
+constexpr int kModels = 3;
 
 struct Sample {
     vector<float> runtimes;  // in msec
@@ -530,9 +530,9 @@ int main(int argc, char **argv) {
                     auto &tp = tpp[model];
 
                     for (auto &p : train ? samples : validation_set) {
-                        if (kModels > 1 && rng() & 1) {
-                            continue;  // If we are training multiple kModels, allow them to diverge.
-                        }
+                        // if (kModels > 1 && rng() & 1) {
+                        //     continue;  // If we are training multiple kModels, allow them to diverge.
+                        // }
                         // if (p.second.schedules.size() < 8) {
                         //     continue;
                         // }
@@ -651,7 +651,7 @@ int main(int argc, char **argv) {
             std::cout << "Epoch: " << e << " ";
             std::cout << "Loss: ";
             for (int model = 0; model < kModels; model++) {
-                std::cout << loss_sum[model] / loss_sum_counter[model] << " ";
+                std::cout << loss_sum[model] / loss_sum_counter[model] << " "; 
                 loss_sum[model] *= 0.9f;
                 loss_sum_counter[model] *= 0.9f;
             }
@@ -668,7 +668,7 @@ int main(int argc, char **argv) {
                 correct_ordering_rate_count[model] *= 0.9f;
 
                 rate = v_correct_ordering_rate_sum[model] / v_correct_ordering_rate_count[model];
-                if (rate < best_rate) {
+                if (!std::isnan(rate) && rate < best_rate) {
                     best_model = model;
                     best_rate = rate;
                 }

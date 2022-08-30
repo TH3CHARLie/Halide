@@ -11,12 +11,18 @@ from matplotlib.ticker import FormatStrFormatter
 from rsquared import rsquared, relative_loss
 
 def plot(predictions_file, app, output_dir, lower_bound, upper_bound, name):
-  predicted_label = name + " Predicted (ms)"
-  actual_label = "Actual (ms)"
+  predicted_label = name + " Predicted"
+  actual_label = "Actual"
   data = pd.read_csv(predictions_file, names=[predicted_label, actual_label])
 
+  for i, item in enumerate(data[predicted_label]):
+    data[predicted_label][i] = 1.0 / item
+  for i, item in enumerate(data[actual_label]):
+    data[actual_label][i] = 1.0 / item
+
+
   r2 = rsquared(data, predicted_label, actual_label)
-  title = "{}: Run Time Predictions ($R^2$ = {:.2f}; Loss = {:.2f})".format(app, r2, relative_loss(data, predicted_label, actual_label))
+  title = "{}: Throughput Predictions ($R^2$ = {:.2f}; Loss = {:.2f})".format(app, r2, relative_loss(data, predicted_label, actual_label))
   fig, ax = plt.subplots()
   plt.scatter(x=predicted_label, y=actual_label, data=data, s=5, linewidth=0.05, alpha=0.5)
 
@@ -24,14 +30,17 @@ def plot(predictions_file, app, output_dir, lower_bound, upper_bound, name):
   upper_bound_label = "Upper Bound"
   lower_bound_data = pd.read_csv(lower_bound, names=[lower_bound_label, actual_label])
   upper_bound_data = pd.read_csv(upper_bound, names=[upper_bound_label, actual_label])
+  lower_bound_data[lower_bound_label] = 1.0 / lower_bound_data[lower_bound_label]
+  upper_bound_data[upper_bound_label] = 1.0 / upper_bound_data[upper_bound_label]
+
   # print(data[predicted_label])
   # print(lower_bound_data[lower_bound_label])
   plt.vlines(x=data[predicted_label], ymin=lower_bound_data[lower_bound_label], ymax=upper_bound_data[upper_bound_label], colors='red', lw=0.5)
 
 
   ax.set_title(title)
-  plt.xscale('log', base=2)
-  plt.yscale('log', base=2)
+  # plt.xscale('log', base=2)
+  # plt.yscale('log', base=2)
 
   max = np.ceil(np.max(np.max(data)))
   min = np.floor(np.min(np.min(data)))
@@ -44,7 +53,7 @@ def plot(predictions_file, app, output_dir, lower_bound, upper_bound, name):
   plt.ylabel(actual_label)
 
   for axis in [ax.get_xaxis(), ax.get_yaxis()]:
-    axis.set_major_formatter(FormatStrFormatter("%.1f"))
+    axis.set_major_formatter(FormatStrFormatter("%.7f"))
     axis.set_minor_formatter(ScalarFormatter())
 
     for tick in axis.get_minor_ticks():

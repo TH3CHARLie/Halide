@@ -426,6 +426,8 @@ void DefaultCostModel::load_weights() {
         auto seed = time(nullptr);
         std::cout << "Randomizing weights using seed = " << seed << "\n";
         weights.randomize((uint32_t)seed);
+        // to ensure different seeds
+        sleep(3);
     }
 
     // Update so that any version of this we save will have the current version

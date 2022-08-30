@@ -81,7 +81,9 @@ struct ModelWeight<true> : public GeneratorInput<Buffer<float>> {
 
         // Update the weights
         Expr step = learning_rate * smoothed_deriv * smoothed_deriv_correction;
-        step /= sqrt(smoothed_second_moment * smoothed_second_moment_correction) + 1e-5f;
+        step /= sqrt(smoothed_second_moment * smoothed_second_moment_correction) + 1e-3f;
+
+        // step = clamp(step, -0.1f, 0.1f);
 
         new_weight = current_weight - step;
     }
@@ -155,7 +157,7 @@ public:
 
     // Some extra inputs for training mode.
     Input<float> learning_rate{"learning_rate", 1.0f};
-    Input<int> timestep{"timestep", 0};  // Needed by ADAM
+    Input<uint32_t> timestep{"timestep", 0};  // Needed by ADAM
 
     // The index of the fastest schedule in the batch. Used as a
     // reference point for computing relative throughput.
