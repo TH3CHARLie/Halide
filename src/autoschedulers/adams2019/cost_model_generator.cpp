@@ -589,7 +589,7 @@ public:
         pipeline_features.set_estimates({{0, head1_w}, {0, head1_h}, {0, 13}});
         schedule_features.set_estimates({{0, 80}, {0, head2_w}, {0, 13}});
         true_runtime.set_estimates({{0, 80}});
-
+        alpha.set_estimate(0.005f);
         // SCHEDULE
         if (training && !auto_schedule) {
             do_cost_model_schedule(get_pipeline());
