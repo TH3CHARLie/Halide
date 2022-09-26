@@ -38,7 +38,7 @@ BATCH_ID ?= 0
 TRAIN_ONLY ?= 0
 SAMPLES_DIR ?= autotuned_samples
 autotune: $(GENERATOR_BIN)/resnet50.generator $(AUTOSCHED_BIN)/featurization_to_sample $(AUTOSCHED_BIN)/retrain_cost_model $(AUTOSCHED_BIN)/libautoschedule_adams2019.so $(AUTOSCHED_SRC)/autotune_loop.sh
-	HL_MACHINE_PARAMS=20,1,1 \
+	HL_MACHINE_PARAMS=10,1,1 \
 	SAMPLES_DIR=$(SAMPLES_DIR) \
 	HL_PERMIT_FAILED_UNROLL=1 \
 	bash $(AUTOSCHED_SRC)/autotune_loop.sh \

@@ -1,6 +1,0 @@
-{
-  "HALIDE_ROOT_PATH": "/home/xuanday/dev/Halide",
-  "AUTOSCHED_BIN": "/home/xuanday/dev/Halide/bin",
-  "HALIDE_DISTRIB_PATH": "/home/xuanday/dev/Halide/distrib",
-  "HL_MACHINE_PARAMS": "20,20971520,160"
-}

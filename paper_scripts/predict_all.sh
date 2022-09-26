@@ -5,7 +5,7 @@ if [ $# -ne 3 ]; then
   exit
 fi
 
-export AUTOSCHED_BIN="/home/xuanday/dev/Halide/bin"
+export AUTOSCHED_BIN="/home/xuanda/dev/Halide/bin"
 SAMPLES_DIR=${1}
 WEIGHTS_FILE=${2}
 PREDICTIONS_FILE=${3}
@@ -15,15 +15,14 @@ echo "Samples directory: ${SAMPLES_DIR}"
 echo "Weights file: ${WEIGHTS_FILE}"
 echo "Saving predictions to: ${PREDICTIONS_FILE}"
 
-NUM_CORES=20
-NUM_EPOCHS=1
+NUM_CORES=10
 
 WEIGHTS_OUTFILE="${SAMPLES_DIR}/updated_back.weights"
 find ${SAMPLES_DIR} -name "*.sample" | \
     ${AUTOSCHED_BIN}/retrain_cost_model \
         --epochs="1" \
         --rates="0.001" \
-        --num_cores=20 \
+        --num_cores=${NUM_CORES} \
         --initial_weights=${WEIGHTS_FILE} \
         --weights_out=${WEIGHTS_OUTFILE} \
         --predict_only="1" \
