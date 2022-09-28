@@ -30,7 +30,6 @@ struct Flags {
     string initial_weights_path;
     string weights_out_path;
     int num_cores = 32;
-    bool reset_weights = false;
     bool randomize_weights = false;
     bool predict_only = false;
     string best_benchmark_path;
@@ -39,7 +38,6 @@ struct Flags {
     bool verbose;
     bool partition_schedules;
     int limit;
-    float alpha = 0.001f;
 
     Flags(int argc, char **argv) {
         cmdline::parser a;
@@ -60,7 +58,6 @@ struct Flags {
         a.add<bool>("verbose");
         a.add<bool>("partition_schedules");
         a.add<int>("limit");
-        a.add<float>("alpha");
 
         a.parse_check(argc, argv);  // exits if parsing fails
 
@@ -76,7 +73,6 @@ struct Flags {
         verbose = a.exist("verbose") && a.get<bool>("verbose");
         partition_schedules = a.exist("partition_schedules") && a.get<bool>("partition_schedules");
         limit = a.get<int>("limit");
-        alpha = a.get<float>("alpha");
 
         if (epochs <= 0) {
             std::cerr << "--epochs must be specified and > 0.\n";
@@ -120,7 +116,7 @@ struct Flags {
     }
 };
 
-constexpr int kModels = 3;
+constexpr int kModels = 1;
 
 struct Sample {
     vector<float> runtimes;  // in msec
@@ -128,8 +124,6 @@ struct Sample {
     string filename;
     int32_t schedule_id;
     Buffer<float> schedule_features;
-    float lower_bound_prediction;
-    float upper_bound_prediction;
 };
 
 struct PipelineSample {
@@ -197,53 +191,6 @@ void save_predictions(const map<int, PipelineSample> &samples, const string &fil
     assert(!file.fail());
 
     std::cout << "Predictions saved to: " << filename << "\n";
-}
-
-void update_lower_upper_predictions(PipelineSample &sample, size_t batch_size, 
-                                    Halide::Runtime::Buffer<float> &lower_bound_prediction_buffer,
-                                    Halide::Runtime::Buffer<float> &upper_bound_prediction_buffer) {
-    auto it = sample.schedules.begin();
-    for (size_t i = 0; i < batch_size; ++i) {
-        auto &sched = it->second;
-        sched.lower_bound_prediction = lower_bound_prediction_buffer(i);
-        sched.upper_bound_prediction = upper_bound_prediction_buffer(i);
-        it++;
-    }
-}
-
-void save_lower_upper_predictions(const map<int, PipelineSample> &samples) {
-    {
-        // lower bound
-        std::ostringstream out;
-        for (const auto &p : samples) {
-            for (const auto &sched : p.second.schedules) {
-                if (sched.second.runtimes.empty()) {
-                    continue;
-                }
-                out<< sched.second.lower_bound_prediction << ", " << sched.second.runtimes[0] << "\n";
-            }
-        }
-        std::ofstream file("lower_bound_predictions.txt", std::ios_base::trunc);
-        file << out.str();
-        file.close();
-        assert(!file.fail());
-    }
-    {
-        // lower bound
-        std::ostringstream out;
-        for (const auto &p : samples) {
-            for (const auto &sched : p.second.schedules) {
-                if (sched.second.runtimes.empty()) {
-                    continue;
-                }
-                out<< sched.second.upper_bound_prediction << ", " << sched.second.runtimes[0] << "\n";
-            }
-        }
-        std::ofstream file("upper_bound_predictions.txt", std::ios_base::trunc);
-        file << out.str();
-        file.close();
-        assert(!file.fail());
-    }
 }
 
 // Load all the samples, reading filenames from stdin
@@ -498,10 +445,6 @@ int main(int argc, char **argv) {
 
     for (float learning_rate : flags.rates) {
         float loss_sum[kModels] = {0}, loss_sum_counter[kModels] = {0};
-        float lower_bound_loss_term1_sum[kModels] = {0}, lower_bound_loss_term1_counter[kModels] = {0};
-        float lower_bound_loss_term2_sum[kModels] = {0}, lower_bound_loss_term2_counter[kModels] = {0};
-        float upper_bound_loss_term1_sum[kModels] = {0}, upper_bound_loss_term1_counter[kModels] = {0};
-        float upper_bound_loss_term2_sum[kModels] = {0}, upper_bound_loss_term2_counter[kModels] = {0}; 
         float correct_ordering_rate_sum[kModels] = {0};
         float correct_ordering_rate_count[kModels] = {0};
         float v_correct_ordering_rate_sum[kModels] = {0};
@@ -530,9 +473,9 @@ int main(int argc, char **argv) {
                     auto &tp = tpp[model];
 
                     for (auto &p : train ? samples : validation_set) {
-                        // if (kModels > 1 && rng() & 1) {
-                        //     continue;  // If we are training multiple kModels, allow them to diverge.
-                        // }
+                        if (kModels > 1 && rng() & 1) {
+                            continue;  // If we are training multiple kModels, allow them to diverge.
+                        }
                         // if (p.second.schedules.size() < 8) {
                         //     continue;
                         // }
@@ -542,9 +485,7 @@ int main(int argc, char **argv) {
                         size_t batch_size = std::min((size_t)1024, p.second.schedules.size());
                         size_t fastest_idx = 0;
                         Halide::Runtime::Buffer<float> runtimes(batch_size);
-                        Halide::Runtime::Buffer<float> lower_bound_predictions(batch_size);
-                        Halide::Runtime::Buffer<float> upper_bound_predictions(batch_size);
-                        
+
                         size_t first = 0;
                         if (p.second.schedules.size() > 1024) {
                             first = rng() % (p.second.schedules.size() - 1024);
@@ -565,27 +506,12 @@ int main(int argc, char **argv) {
                         }
 
                         float loss = 0.0f;
-                        float lower_bound_loss_term1 = 0.0f, lower_bound_loss_term2 = 0.0f,
-                              upper_bound_loss_term1 = 0.0f, upper_bound_loss_term2 = 0.0f;
                         if (train & !predict_only) {
-                            loss = tp->backprop(runtimes, learning_rate, flags.alpha,
-                                                &lower_bound_loss_term1,
-                                                &lower_bound_loss_term2,
-                                                &upper_bound_loss_term1,
-                                                &upper_bound_loss_term2);
+                            loss = tp->backprop(runtimes, learning_rate);
                             assert(!std::isnan(loss));
                             loss_sum[model] += loss;
                             loss_sum_counter[model]++;
-                            lower_bound_loss_term1_sum[model] += lower_bound_loss_term1;
-                            lower_bound_loss_term2_sum[model] += lower_bound_loss_term2;
-                            upper_bound_loss_term1_sum[model] += upper_bound_loss_term1;
-                            upper_bound_loss_term2_sum[model] += upper_bound_loss_term2;
-                            
-                            lower_bound_loss_term1_counter[model]++;
-                            lower_bound_loss_term2_counter[model]++;
-                            upper_bound_loss_term1_counter[model]++;
-                            upper_bound_loss_term2_counter[model]++;
-                            
+
                             auto it = p.second.schedules.begin();
                             std::advance(it, first);
                             for (size_t j = 0; j < batch_size; j++) {
@@ -599,8 +525,7 @@ int main(int argc, char **argv) {
                                 it++;
                             }
                         } else {
-                            tp->evaluate_costs_with_lower_upper_bounds(lower_bound_predictions, upper_bound_predictions);
-                            update_lower_upper_predictions(p.second, batch_size, lower_bound_predictions, upper_bound_predictions);
+                            tp->evaluate_costs();
                         }
 
                         if (true) {
@@ -651,7 +576,7 @@ int main(int argc, char **argv) {
             std::cout << "Epoch: " << e << " ";
             std::cout << "Loss: ";
             for (int model = 0; model < kModels; model++) {
-                std::cout << loss_sum[model] / loss_sum_counter[model] << " "; 
+                std::cout << loss_sum[model] / loss_sum_counter[model] << " ";
                 loss_sum[model] *= 0.9f;
                 loss_sum_counter[model] *= 0.9f;
             }
@@ -702,45 +627,9 @@ int main(int argc, char **argv) {
             }
 
             tpp[best_model]->save_weights();
-            std::cout << "Epoch: " << e << " ";
-            std::cout << "Lower_Bound_Term_1_Loss: ";
-            for (int model = 0; model < kModels; model++) {
-                std::cout << lower_bound_loss_term1_sum[model] / lower_bound_loss_term1_counter[model] << " ";
-                lower_bound_loss_term1_sum[model] *= 0.9f;
-                lower_bound_loss_term1_counter[model] *= 0.9f;
-            }
-            std::cout << "\n";
-
-            std::cout << "Epoch: " << e << " ";
-            std::cout << "Lower_Bound_Term_2_Loss: ";
-            for (int model = 0; model < kModels; model++) {
-                std::cout << lower_bound_loss_term2_sum[model] / lower_bound_loss_term2_counter[model] << " ";
-                lower_bound_loss_term2_sum[model] *= 0.9f;
-                lower_bound_loss_term2_counter[model] *= 0.9f;
-            }
-            std::cout << "\n";
-
-            std::cout << "Epoch: " << e << " ";
-            std::cout << "Upper_Bound_Term_1_Loss: ";
-            for (int model = 0; model < kModels; model++) {
-                std::cout << upper_bound_loss_term1_sum[model] / upper_bound_loss_term1_counter[model] << " ";
-                upper_bound_loss_term1_sum[model] *= 0.9f;
-                upper_bound_loss_term1_counter[model] *= 0.9f;
-            }
-            std::cout << "\n";
-
-            std::cout << "Epoch: " << e << " ";
-            std::cout << "Upper_Bound_Term_2_Loss: ";
-            for (int model = 0; model < kModels; model++) {
-                std::cout << upper_bound_loss_term2_sum[model] / upper_bound_loss_term2_counter[model] << " ";
-                upper_bound_loss_term2_sum[model] *= 0.9f;
-                upper_bound_loss_term2_counter[model] *= 0.9f;
-            }
-            std::cout << "\n";
 
             if (loss_sum[best_model] < 1e-5f) {
                 save_predictions(samples, flags.predictions_file);
-                save_lower_upper_predictions(samples);
                 std::cout << "Zero loss, returning early\n";
                 return 0;
             }
