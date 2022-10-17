@@ -30,7 +30,6 @@ struct Flags {
     string initial_weights_path;
     string weights_out_path;
     int num_cores = 32;
-    bool reset_weights = false;
     bool randomize_weights = false;
     bool predict_only = false;
     string best_benchmark_path;
@@ -488,9 +487,9 @@ int main(int argc, char **argv) {
                         Halide::Runtime::Buffer<float> runtimes(batch_size);
 
                         size_t first = 0;
-                        // if (p.second.schedules.size() > 1024) {
-                        //     first = rng() % (p.second.schedules.size() - 1024);
-                        // }
+                        if (p.second.schedules.size() > 1024) {
+                            first = rng() % (p.second.schedules.size() - 1024);
+                        }
 
                         auto it = p.second.schedules.begin();
                         std::advance(it, first);
@@ -594,7 +593,7 @@ int main(int argc, char **argv) {
                 correct_ordering_rate_count[model] *= 0.9f;
 
                 rate = v_correct_ordering_rate_sum[model] / v_correct_ordering_rate_count[model];
-                if (rate < best_rate) {
+                if (!std::isnan(rate) && rate < best_rate) {
                     best_model = model;
                     best_rate = rate;
                 }
@@ -633,6 +632,11 @@ int main(int argc, char **argv) {
                 save_predictions(samples, flags.predictions_file);
                 std::cout << "Zero loss, returning early\n";
                 return 0;
+            }
+            if (e != 0 && e % 1000 == 0) {
+                float best_model_loss = loss_sum[best_model] / loss_sum_counter[best_model];
+                std::string weights_path = "epoch_" + std::to_string(e) + "_loss_" + std::to_string(best_model_loss) + "_index_" + std::to_string(best_model) + ".weights";
+                tpp[best_model]->save_to_weights_file(weights_path);
             }
         }
     }
