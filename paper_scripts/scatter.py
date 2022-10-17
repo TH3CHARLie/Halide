@@ -21,8 +21,7 @@ def plot(predictions_file, app, output_dir):
   plt.scatter(x=predicted_label, y=actual_label, data=data, s=5, linewidth=0.05, alpha=0.5)
 
   ax.set_title(title)
-  plt.xscale('log', subsx=[2, 4, 6, 8])
-  plt.yscale('log', subsy=[2, 4, 6, 8])
+
 
   max = np.ceil(np.max(np.max(data)))
   min = np.floor(np.min(np.min(data)))

@@ -28,8 +28,8 @@ cat ${SAMPLE_FILE} | \
         --initial_weights=${WEIGHTS_FILE} \
         --weights_out=${WEIGHTS_OUTFILE} \
         --predict_only="1" \
-        --best_benchmark=${SAMPLES_DIR}/best.${PIPELINE}.benchmark.txt \
-        --best_schedule=${SAMPLES_DIR}/best.${PIPELINE}.schedule.h \
+        --best_benchmark="" \
+        --best_schedule="" \
         --predictions_file=${PREDICTIONS_WITH_FILENAMES_FILE} \
         --verbose="0" \
         --partition_schedules="0" \
