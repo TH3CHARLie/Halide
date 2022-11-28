@@ -128,6 +128,8 @@ tests(GROUPS correctness
       gpu_data_flows.cpp
       gpu_different_blocks_threads_dimensions.cpp
       gpu_dynamic_shared.cpp
+      gpu_error_1.cpp
+      gpu_error_2.cpp
       gpu_free_sync.cpp
       gpu_give_input_buffers_device_allocations.cpp
       gpu_jit_explicit_copy_to_device.cpp
@@ -263,8 +265,11 @@ tests(GROUPS correctness
       shift_by_unsigned_negated.cpp
       shifted_image.cpp
       side_effects.cpp
-      simd_op_check.cpp
+      simd_op_check_arm.cpp
       simd_op_check_hvx.cpp
+      simd_op_check_powerpc.cpp
+      simd_op_check_wasm.cpp
+      simd_op_check_x86.cpp
       simplified_away_embedded_image.cpp
       simplify.cpp
       skip_stages.cpp
