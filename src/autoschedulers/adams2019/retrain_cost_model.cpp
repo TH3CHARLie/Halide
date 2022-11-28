@@ -31,8 +31,10 @@ struct Flags {
     string weights_out_path;
     int num_cores = 32;
     bool randomize_weights = false;
+    bool predict_only = false;
     string best_benchmark_path;
     string best_schedule_path;
+    string predictions_file;
 
     Flags(int argc, char **argv) {
         cmdline::parser a;
@@ -45,9 +47,11 @@ struct Flags {
         a.add<string>("initial_weights", '\0', kNoDesc, kOptional, "");
         a.add<string>("weights_out");
         a.add<bool>("randomize_weights", '\0', kNoDesc, kOptional, false);
+        a.add<bool>("predict_only", '\0', kNoDesc, kOptional, false);
         a.add<int>("num_cores");
         a.add<string>("best_benchmark");
         a.add<string>("best_schedule");
+        a.add<string>("predictions_file");
 
         a.parse_check(argc, argv);  // exits if parsing fails
 
@@ -56,9 +60,11 @@ struct Flags {
         initial_weights_path = a.get<string>("initial_weights");
         weights_out_path = a.get<string>("weights_out");
         randomize_weights = a.exist("randomize_weights") && a.get<bool>("randomize_weights");
+        predict_only = a.exist("predict_only") && a.get<bool>("predict_only");
         best_benchmark_path = a.get<string>("best_benchmark");
         best_schedule_path = a.get<string>("best_schedule");
-
+        predictions_file = a.get<string>("predictions_file");
+        
         if (epochs <= 0) {
             std::cerr << "--epochs must be specified and > 0.\n";
             std::cerr << a.usage();
@@ -158,6 +164,26 @@ string leaf(const string &path) {
         return path;
     }
 }
+
+void save_predictions(const map<int, PipelineSample> &samples, const string &filename) {
+    std::ostringstream out;
+    for (const auto &p : samples) {
+        for (const auto &sched : p.second.schedules) {
+            if (sched.second.runtimes.empty()) {
+                continue;
+            }
+            out << sched.second.filename << ", " << sched.second.prediction[0] << ", " << sched.second.runtimes[0] << "\n";
+        }
+    }
+
+    std::ofstream file(filename, std::ios_base::trunc);
+    file << out.str();
+    file.close();
+    assert(!file.fail());
+
+    std::cout << "Predictions saved to: " << filename << "\n";
+}
+
 
 // Load all the samples, reading filenames from stdin
 map<int, PipelineSample> load_samples(const Flags &flags) {
@@ -387,6 +413,7 @@ int main(int argc, char **argv) {
     Flags flags(argc, argv);
 
     auto samples = load_samples(flags);
+    bool predict_only = flags.predict_only;
 
     // Iterate through the pipelines
     vector<std::unique_ptr<DefaultCostModel>> tpp;
@@ -486,7 +513,7 @@ int main(int argc, char **argv) {
                         }
 
                         float loss = 0.0f;
-                        if (train) {
+                        if (train && !predict_only) {
                             loss = tp->backprop(runtimes, learning_rate);
                             assert(!std::isnan(loss));
                             loss_sum[model] += loss;
@@ -568,7 +595,7 @@ int main(int argc, char **argv) {
 
                 counter++;
             }
-
+            std::cout << "Epoch: " << e << " ";
             std::cout << "Loss: ";
             for (int model = 0; model < kModels; model++) {
                 std::cout << loss_sum[model] / loss_sum_counter[model] << " ";
@@ -613,6 +640,7 @@ int main(int argc, char **argv) {
             tpp[best_model]->save_weights();
 
             if (loss_sum[best_model] < 1e-5f) {
+                save_predictions(samples, flags.predictions_file);
                 std::cout << "Zero loss, returning early\n";
                 return 0;
             }
@@ -630,6 +658,9 @@ int main(int argc, char **argv) {
     }
 
     // tpp.save_weights();
+    if (predict_only) {
+        save_predictions(samples, flags.predictions_file);
+    }
 
     return 0;
 }
