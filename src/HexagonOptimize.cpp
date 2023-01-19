@@ -1996,6 +1996,22 @@ class OptimizeShuffles : public IRMutator {
         return visit_let<Stmt>(op);
     }
 
+    set<string> allocations_to_pad;
+    Stmt visit(const Allocate *op) override {
+        Stmt s = IRMutator::visit(op);
+        if (allocations_to_pad.count(op->name)) {
+            op = s.as<Allocate>();
+            internal_assert(op);
+            int padding = 128 / op->type.bytes();  // One native vector
+            return Allocate::make(op->name, op->type, op->memory_type,
+                                  op->extents, op->condition,
+                                  op->body, op->new_expr, op->free_function,
+                                  std::max(op->padding, padding));
+        } else {
+            return s;
+        }
+    }
+
     Expr visit(const Load *op) override {
         if (!is_const_one(op->predicate)) {
             // TODO(psuriana): We shouldn't mess with predicated load for now.
@@ -2031,8 +2047,9 @@ class OptimizeShuffles : public IRMutator {
 
                     // Load all of the possible indices loaded from the
                     // LUT. Note that for clamped ramps, this loads up to 1
-                    // vector past the max. CodeGen_Hexagon::allocation_padding
-                    // returns a native vector size to account for this.
+                    // vector past the max, so we will add padding to the
+                    // allocation accordingly (if we're the one that made it).
+                    allocations_to_pad.insert(op->name);
                     Expr lut = Load::make(op->type.with_lanes(const_extent), op->name,
                                           Ramp::make(base, 1, const_extent),
                                           op->image, op->param, const_true(const_extent), alignment);
@@ -2172,13 +2189,17 @@ private:
                 const Cast *cast_a = a.as<Cast>();
                 bool is_widening_cast = cast_a && cast_a->type.bits() >= cast_a->value.type().bits() * 2;
                 if (is_widening_cast || Call::as_intrinsic(a, {Call::widening_add, Call::widening_mul, Call::widening_sub})) {
-                    return mutate(distribute(a, make_one(a.type()) << *const_b));
+                    const uint64_t const_m = 1ull << *const_b;
+                    Expr b = make_const(a.type(), const_m);
+                    return mutate(distribute(a, b));
                 }
             }
         } else if (op->is_intrinsic(Call::widening_shift_left)) {
             if (const uint64_t *const_b = as_const_uint(op->args[1])) {
+                const uint64_t const_m = 1ull << *const_b;
+                Expr b = make_const(op->type, const_m);
                 Expr a = Cast::make(op->type, op->args[0]);
-                return mutate(distribute(a, make_one(a.type()) << *const_b));
+                return mutate(distribute(a, b));
             }
         }
         return IRMutator::visit(op);

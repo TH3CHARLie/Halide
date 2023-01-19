@@ -64,11 +64,10 @@ LLVM_BINDIR = $(shell $(LLVM_CONFIG) --bindir | sed -e 's/\\/\//g' -e 's/\([a-zA
 LLVM_LIBDIR = $(shell $(LLVM_CONFIG) --libdir | sed -e 's/\\/\//g' -e 's/\([a-zA-Z]\):/\/\1/g')
 # Apparently there is no llvm_config flag to get canonical paths to tools,
 # so we'll just construct one relative to --src-root and hope that is stable everywhere.
-LLVM_GIT_LLD_INCLUDE_DIR = $(shell $(LLVM_CONFIG) --src-root | sed -e 's/\\/\//g' -e 's/\([a-zA-Z]\):/\/\1/g')/../lld/include
 LLVM_SYSTEM_LIBS=$(shell ${LLVM_CONFIG} --system-libs --link-static | sed -e 's/[\/&]/\\&/g' | sed 's/-llibxml2.tbd/-lxml2/')
 LLVM_AS = $(LLVM_BINDIR)/llvm-as
 LLVM_NM = $(LLVM_BINDIR)/llvm-nm
-LLVM_CXX_FLAGS = -std=c++17  $(filter-out -O% -g -fomit-frame-pointer -pedantic -W% -W, $(shell $(LLVM_CONFIG) --cxxflags | sed -e 's/\\/\//g' -e 's/\([a-zA-Z]\):/\/\1/g;s/-D/ -D/g;s/-O/ -O/;s/c++14/c++17/g')) -I$(LLVM_GIT_LLD_INCLUDE_DIR)
+LLVM_CXX_FLAGS = -std=c++17  $(filter-out -O% -g -fomit-frame-pointer -pedantic -W% -W, $(shell $(LLVM_CONFIG) --cxxflags | sed -e 's/\\/\//g' -e 's/\([a-zA-Z]\):/\/\1/g;s/-D/ -D/g;s/-O/ -O/;s/c++14/c++17/g'))
 OPTIMIZE ?= -O3
 OPTIMIZE_FOR_BUILD_TIME ?= -O0
 
@@ -113,7 +112,6 @@ LLVM_CXX_FLAGS += -DLLVM_VERSION=$(LLVM_VERSION_TIMES_10)
 WITH_X86 ?= $(findstring x86, $(LLVM_COMPONENTS))
 WITH_ARM ?= $(findstring arm, $(LLVM_COMPONENTS))
 WITH_HEXAGON ?= $(findstring hexagon, $(LLVM_COMPONENTS))
-WITH_MIPS ?= $(findstring mips, $(LLVM_COMPONENTS))
 WITH_RISCV ?= $(findstring riscv, $(LLVM_COMPONENTS))
 WITH_AARCH64 ?= $(findstring aarch64, $(LLVM_COMPONENTS))
 WITH_POWERPC ?= $(findstring powerpc, $(LLVM_COMPONENTS))
@@ -139,9 +137,6 @@ X86_LLVM_CONFIG_LIB=$(if $(WITH_X86), x86, )
 
 ARM_CXX_FLAGS=$(if $(WITH_ARM), -DWITH_ARM, )
 ARM_LLVM_CONFIG_LIB=$(if $(WITH_ARM), arm, )
-
-MIPS_CXX_FLAGS=$(if $(WITH_MIPS), -DWITH_MIPS, )
-MIPS_LLVM_CONFIG_LIB=$(if $(WITH_MIPS), mips, )
 
 POWERPC_CXX_FLAGS=$(if $(WITH_POWERPC), -DWITH_POWERPC, )
 POWERPC_LLVM_CONFIG_LIB=$(if $(WITH_POWERPC), powerpc, )
@@ -210,7 +205,6 @@ CXX_FLAGS += $(OPENCL_CXX_FLAGS)
 CXX_FLAGS += $(METAL_CXX_FLAGS)
 CXX_FLAGS += $(OPENGLCOMPUTE_CXX_FLAGS)
 CXX_FLAGS += $(D3D12_CXX_FLAGS)
-CXX_FLAGS += $(MIPS_CXX_FLAGS)
 CXX_FLAGS += $(POWERPC_CXX_FLAGS)
 CXX_FLAGS += $(INTROSPECTION_CXX_FLAGS)
 CXX_FLAGS += $(EXCEPTIONS_CXX_FLAGS)
@@ -232,14 +226,13 @@ LLVM_STATIC_LIBFILES = \
 	linker \
 	ipo \
 	passes \
-	mcjit \
+	orcjit \
 	$(X86_LLVM_CONFIG_LIB) \
 	$(ARM_LLVM_CONFIG_LIB) \
 	$(OPENCL_LLVM_CONFIG_LIB) \
 	$(METAL_LLVM_CONFIG_LIB) \
 	$(PTX_LLVM_CONFIG_LIB) \
 	$(AARCH64_LLVM_CONFIG_LIB) \
-	$(MIPS_LLVM_CONFIG_LIB) \
 	$(POWERPC_LLVM_CONFIG_LIB) \
 	$(HEXAGON_LLVM_CONFIG_LIB) \
 	$(AMDGPU_LLVM_CONFIG_LIB) \
@@ -434,7 +427,6 @@ SOURCE_FILES = \
   CodeGen_Internal.cpp \
   CodeGen_LLVM.cpp \
   CodeGen_Metal_Dev.cpp \
-  CodeGen_MIPS.cpp \
   CodeGen_OpenCL_Dev.cpp \
   CodeGen_OpenGLCompute_Dev.cpp \
   CodeGen_Posix.cpp \
@@ -560,6 +552,7 @@ SOURCE_FILES = \
   Solve.cpp \
   SpirvIR.cpp \
   SplitTuples.cpp \
+  StageStridedLoads.cpp \
   StmtToHtml.cpp \
   StorageFlattening.cpp \
   StorageFolding.cpp \
@@ -726,6 +719,7 @@ HEADER_FILES = \
   SlidingWindow.h \
   Solve.h \
   SplitTuples.h \
+  StageStridedLoads.h \
   StmtToHtml.h \
   StorageFlattening.h \
   StorageFolding.h \
@@ -754,8 +748,8 @@ RUNTIME_CPP_COMPONENTS = \
   aarch64_cpu_features \
   alignment_128 \
   alignment_32 \
-  allocation_cache \
   alignment_64 \
+  allocation_cache \
   android_clock \
   android_host_cpu_count \
   android_io \
@@ -769,6 +763,8 @@ RUNTIME_CPP_COMPONENTS = \
   fake_get_symbol \
   fake_thread_pool \
   float16_t \
+  fopen \
+  fopen_lfs \
   force_include_types \
   fuchsia_clock \
   fuchsia_host_cpu_count \
@@ -777,8 +773,8 @@ RUNTIME_CPP_COMPONENTS = \
   halide_buffer_t \
   hexagon_cache_allocator \
   hexagon_cpu_features \
-  hexagon_dma_pool \
   hexagon_dma \
+  hexagon_dma_pool \
   hexagon_host \
   ios_io \
   linux_clock \
@@ -787,20 +783,20 @@ RUNTIME_CPP_COMPONENTS = \
   metal \
   metal_objc_arm \
   metal_objc_x86 \
-  mips_cpu_features \
   module_aot_ref_count \
   module_jit_ref_count \
   msan \
   msan_stubs \
   opencl \
-  openglcompute \
   opengl_egl_context \
   opengl_glx_context \
+  openglcompute \
   osx_clock \
   osx_get_symbol \
   osx_host_cpu_count \
   osx_opengl_context \
   osx_yield \
+  posix_aligned_alloc \
   posix_allocator \
   posix_clock \
   posix_error_handler \
@@ -847,7 +843,6 @@ RUNTIME_LL_COMPONENTS = \
   arm \
   arm_no_neon \
   hvx_128 \
-  mips \
   posix_math \
   powerpc \
   ptx_dev \
@@ -1097,25 +1092,9 @@ $(BUILD_DIR)/initmod.%_32_debug.ll: $(SRC_DIR)/runtime/%.cpp $(BUILD_DIR)/clang_
 	@mkdir -p $(@D)
 	$(CLANG) $(CXX_WARNING_FLAGS) -g -DDEBUG_RUNTIME -O3 $(RUNTIME_CXX_FLAGS) -fpic -m32 -target $(RUNTIME_TRIPLE_32) -DCOMPILING_HALIDE_RUNTIME -DBITS_32 -emit-llvm -S $(SRC_DIR)/runtime/$*.cpp -o $@ -MMD -MP -MF $(BUILD_DIR)/initmod.$*_32_debug.d
 
-ifneq (,$(findstring $(LLVM_VERSION_TIMES_10), 130))
-# For LLVM14+, we must add elementtype() annotations to some of our LLVM IR;
-# earlier versions either don't understand that keyword at all, or don't support
-# the uses we have for it. Rather than forking these sources, for now we'll just
-# edit the files at build time to remove the offending uses. Note that while we could use `sed`
-# here, that isn't an option for CMake builds (since they must support Windows environments without
-# such tooling); to ensure consistent transformations in all builds, we'll use the tool here, too.
-#
-# (This may well need attention in the future, depending on how the LLVM opaque-pointers work proceeeds;
-# see https://llvm.org/docs/OpaquePointers.html)
-$(BUILD_DIR)/initmod.%_ll.ll: $(SRC_DIR)/runtime/%.ll $(BIN_DIR)/regexp_replace
-	@mkdir -p $(@D)
-	$(BIN_DIR)/regexp_replace 'elementtype\(i[0-9]+\)' '' < $(SRC_DIR)/runtime/$*.ll > $(BUILD_DIR)/initmod.$*_ll.ll
-else
 $(BUILD_DIR)/initmod.%_ll.ll: $(SRC_DIR)/runtime/%.ll
 	@mkdir -p $(@D)
 	cp $(SRC_DIR)/runtime/$*.ll $(BUILD_DIR)/initmod.$*_ll.ll
-endif
-
 
 $(BUILD_DIR)/initmod.%.bc: $(BUILD_DIR)/initmod.%.ll $(BUILD_DIR)/llvm_ok
 	$(LLVM_AS) $(BUILD_DIR)/initmod.$*.ll -o $(BUILD_DIR)/initmod.$*.bc
@@ -1208,37 +1187,23 @@ GENERATOR_AOTCPP_TESTS := $(filter-out generator_aotcpp_multitarget,$(GENERATOR_
 # remove AOT-CPP tests that don't (yet) work for C++ backend
 # (each tagged with the *known* blocking issue(s))
 
-# https://github.com/halide/Halide/issues/2084 (only if opencl enabled)
-GENERATOR_AOTCPP_TESTS := $(filter-out generator_aotcpp_gpu_texture,$(GENERATOR_AOTCPP_TESTS))
-
-# https://github.com/halide/Halide/issues/2084 (only if opencl enabled)
-GENERATOR_AOTCPP_TESTS := $(filter-out generator_aotcpp_acquire_release,$(GENERATOR_AOTCPP_TESTS))
-
-# https://github.com/halide/Halide/issues/2084 (only if opencl enabled)
-GENERATOR_AOTCPP_TESTS := $(filter-out generator_aotcpp_define_extern_opencl,$(GENERATOR_AOTCPP_TESTS))
-
-# https://github.com/halide/Halide/issues/2084 (only if opencl enabled)
-GENERATOR_AOTCPP_TESTS := $(filter-out generator_aotcpp_gpu_object_lifetime,$(GENERATOR_AOTCPP_TESTS))
-
-# https://github.com/halide/Halide/issues/2084 (only if opencl enabled)
-GENERATOR_AOTCPP_TESTS := $(filter-out generator_aotcpp_gpu_only,$(GENERATOR_AOTCPP_TESTS))
+# sanitizercoverage relies on LLVM-specific hooks, so it will never work with the C backend
+GENERATOR_AOTCPP_TESTS := $(filter-out generator_aotcpp_sanitizercoverage,$(GENERATOR_AOTCPP_TESTS))
 
 # https://github.com/halide/Halide/issues/2084 (only if opencl enabled))
-GENERATOR_AOTCPP_TESTS := $(filter-out generator_aotcpp_cleanup_on_error,$(GENERATOR_AOTCPP_TESTS))
+#GENERATOR_AOTCPP_TESTS := $(filter-out generator_aotcpp_cleanup_on_error,$(GENERATOR_AOTCPP_TESTS))
 
-# https://github.com/halide/Halide/issues/2084 (only if opencl enabled)
-GENERATOR_AOTCPP_TESTS := $(filter-out generator_aotcpp_buffer_copy,$(GENERATOR_AOTCPP_TESTS))
-
-# https://github.com/halide/Halide/issues/2075
+# https://github.com/halide/Halide/issues/7273
 GENERATOR_AOTCPP_TESTS := $(filter-out generator_aotcpp_msan,$(GENERATOR_AOTCPP_TESTS))
 
-# https://github.com/halide/Halide/issues/2075
+# https://github.com/halide/Halide/issues/7272
 GENERATOR_AOTCPP_TESTS := $(filter-out generator_aotcpp_memory_profiler_mandelbrot,$(GENERATOR_AOTCPP_TESTS))
 
 # https://github.com/halide/Halide/issues/4916
 GENERATOR_AOTCPP_TESTS := $(filter-out generator_aotcpp_stubtest,$(GENERATOR_AOTCPP_TESTS))
 GENERATOR_AOTCPP_TESTS := $(filter-out generator_aotcpp_stubuser,$(GENERATOR_AOTCPP_TESTS))
 
+# Build requirements are finicky, testing non-C++ backend is good enough here
 GENERATOR_AOTCPP_TESTS := $(filter-out generator_aotcpp_gpu_multi_context_threaded,$(GENERATOR_AOTCPP_TESTS))
 
 test_aotcpp_generator: $(GENERATOR_AOTCPP_TESTS)
@@ -1449,7 +1414,7 @@ $(FILTERS_DIR)/cxx_mangling_externs.o: $(ROOT_DIR)/test/generator/cxx_mangling_e
 # custom rules: to pass the GeneratorParams, and to give a unique function and file name.
 $(FILTERS_DIR)/cxx_mangling.a: $(BIN_DIR)/cxx_mangling.generator $(FILTERS_DIR)/cxx_mangling_externs.o
 	@mkdir -p $(@D)
-	$(CURDIR)/$< -g cxx_mangling $(GEN_AOT_OUTPUTS) -o $(CURDIR)/$(FILTERS_DIR) target=$(TARGET)-no_runtime-c_plus_plus_name_mangling -f "HalideTest::AnotherNamespace::cxx_mangling"
+	$(CURDIR)/$< -g cxx_mangling $(GEN_AOT_OUTPUTS),function_info_header -o $(CURDIR)/$(FILTERS_DIR) target=$(TARGET)-no_runtime-c_plus_plus_name_mangling -f "HalideTest::AnotherNamespace::cxx_mangling"
 	$(ROOT_DIR)/tools/makelib.sh $@ $@ $(FILTERS_DIR)/cxx_mangling_externs.o
 
 ifneq ($(TEST_CUDA), )
@@ -1533,14 +1498,21 @@ METADATA_TESTER_GENERATOR_ARGS=\
 	array_outputs8.size=2 \
 	array_outputs9.size=2
 
-# metadata_tester is built with and without user-context
+# metadata_tester is built with and without user-context.
+# Also note that metadata_tester (but not metadata_tester_ucon) is built as "multitarget" to verify that
+# the metadata names are correctly emitted.
 $(FILTERS_DIR)/metadata_tester.a: $(BIN_DIR)/metadata_tester.generator
 	@mkdir -p $(@D)
-	$(CURDIR)/$< -g metadata_tester -f metadata_tester $(GEN_AOT_OUTPUTS) -o $(CURDIR)/$(FILTERS_DIR) target=$(TARGET)-no_runtime $(METADATA_TESTER_GENERATOR_ARGS)
+	$(CURDIR)/$< -g metadata_tester -f metadata_tester -e static_library,c_header,registration,function_info_header -o $(CURDIR)/$(FILTERS_DIR) target=$(TARGET)-no_runtime,$(TARGET)-no_runtime-no_bounds_query $(METADATA_TESTER_GENERATOR_ARGS)
+
+# c_source output doesn't work properly with multitarget output
+$(FILTERS_DIR)/metadata_tester.halide_generated.cpp: $(BIN_DIR)/metadata_tester.generator
+	@mkdir -p $(@D)
+	$(CURDIR)/$< -g metadata_tester -f metadata_tester -e c_source -o $(CURDIR)/$(FILTERS_DIR) target=$(TARGET)-no_runtime $(METADATA_TESTER_GENERATOR_ARGS)
 
 $(FILTERS_DIR)/metadata_tester_ucon.a: $(BIN_DIR)/metadata_tester.generator
 	@mkdir -p $(@D)
-	$(CURDIR)/$< -g metadata_tester -f metadata_tester_ucon $(GEN_AOT_OUTPUTS) -o $(CURDIR)/$(FILTERS_DIR) target=$(TARGET)-user_context-no_runtime $(METADATA_TESTER_GENERATOR_ARGS)
+	$(CURDIR)/$< -g metadata_tester -f metadata_tester_ucon $(GEN_AOT_OUTPUTS),function_info_header -o $(CURDIR)/$(FILTERS_DIR) target=$(TARGET)-user_context-no_runtime $(METADATA_TESTER_GENERATOR_ARGS)
 
 $(BIN_DIR)/$(TARGET)/generator_aot_metadata_tester: $(FILTERS_DIR)/metadata_tester_ucon.a
 
@@ -1674,6 +1646,11 @@ $(BIN_DIR)/$(TARGET)/generator_aot_sanitizercoverage: $(ROOT_DIR)/test/generator
 	@mkdir -p $(@D)
 	$(CXX) $(GEN_AOT_CXX_FLAGS) $(filter-out %.h,$^) $(GEN_AOT_INCLUDES) $(GEN_AOT_LD_FLAGS) -o $@
 
+# SanitizerCoverage test will never work with C++ backend
+$(BIN_DIR)/$(TARGET)/generator_aotcpp_sanitizercoverage: $(ROOT_DIR)/test/generator/sanitizercoverage_aottest.cpp
+	@mkdir -p $(@D)
+	echo "SanitizerCoverage test will never work with C++ backend"
+	exit 1
 
 # alias has additional deps to link in
 $(BIN_DIR)/$(TARGET)/generator_aot_alias: $(ROOT_DIR)/test/generator/alias_aottest.cpp $(FILTERS_DIR)/alias.a $(FILTERS_DIR)/alias_with_offset_42.a $(FILTERS_DIR)/alias_Adams2019.a $(FILTERS_DIR)/alias_Li2018.a $(FILTERS_DIR)/alias_Mullapudi2016.a  $(RUNTIME_EXPORTED_INCLUDES) $(BIN_DIR)/$(TARGET)/runtime.a
@@ -2222,7 +2199,7 @@ $(BUILD_DIR)/clang_ok:
 	@exit 1
 endif
 
-ifneq (,$(findstring $(LLVM_VERSION_TIMES_10), 130 140 150 160))
+ifneq (,$(findstring $(LLVM_VERSION_TIMES_10), 140 150 160))
 LLVM_OK=yes
 endif
 
