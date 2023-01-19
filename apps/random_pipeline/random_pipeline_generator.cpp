@@ -385,6 +385,7 @@ public:
         Func conv("conv_" + args[dim].name());
         conv(args) = def;
 
+        std::cout << "Generated: convolve\n";
         return {conv, f.w, f.h, f.c};
     }
 
@@ -398,6 +399,7 @@ public:
         coords[dim] += r;
         conv(args) += rand_value(f.func.value().type()) * f.func(coords);
 
+        std::cout << "Generated: convolve_r\n";
         return {conv, f.w, f.h, f.c};
     }
 
@@ -411,6 +413,7 @@ public:
         coords[dim] += r;
         conv(args) = sum(rand_value(f.func.value().type()) * f.func(coords));
 
+        std::cout << "Generated: convolve_w\n";
         return {conv, f.w, f.h, f.c};
     }
 
@@ -424,6 +427,8 @@ public:
         bounds[2].min = 0;
         bounds[2].extent = f.c;
         Expr zero = cast(f.func.value().type(), 0);
+
+        std::cout << "Generated: padding\n";
         return {BoundaryConditions::constant_exterior(f.func, zero, bounds), f.w, f.h, f.c};
     }
 
@@ -456,6 +461,7 @@ public:
 
         vector<Expr> coords = make_arguments(f.func.args());
         activation(f.func.args()) = max(cast(output_type, 0), cast(output_type, f.func(coords)));
+        std::cout << "Generated: relu_layer\n";
         return {activation, f.w, f.h, f.c};
     }
 
@@ -469,6 +475,7 @@ public:
         vector<Expr> coords = make_arguments(f.func.args());
         Expr exp_pos = fast_exp(2 * cast<float>(f.func(coords)));
         activation(f.func.args()) = (exp_pos - 1) / (exp_pos + 1);
+        std::cout << "Generated: tanh_layer\n";
         return {activation, f.w, f.h, f.c};
     }
 
@@ -509,6 +516,7 @@ public:
 
         pooled2D(args) = def;
 
+        std::cout << "Generated: pooled2D\n";
         return {pooled2D, (f.w + stride - 1) / stride, (f.h + stride - 1) / stride, f.c};
     }
 
@@ -537,6 +545,7 @@ public:
             pooled2D_r(args) += f.func(coords) / scale;
         }
 
+        std::cout << "Generated: pooled2D_r\n";
         return {pooled2D_r, (f.w + stride - 1) / stride, (f.h + stride - 1) / stride, f.c};
     }
 
@@ -558,7 +567,7 @@ public:
         coords[0] = (coords[0] * stride + r.x);
         coords[1] = (coords[1] * stride + r.y);
         pooled2D_w(args) = sum(cast<float>(f.func(coords))) / scale;
-
+        std::cout << "Generated: pooled2D_w\n";
         return {pooled2D_w, (f.w + stride - 1) / stride, (f.h + stride - 1) / stride, f.c};
     }
 
@@ -592,6 +601,7 @@ public:
         Func conv("conv2D_" + args[0].name() + args[1].name());
         conv(args) = def;
 
+        std::cout << "Generated: convolve2D_unrolled\n";
         return {conv, f.w, f.h, out_channels};
     }
 
@@ -625,6 +635,7 @@ public:
         Stage out{conv, f.w, f.h, f.random_out_channels()};
         out.w = (out.w + stride - 1) / stride;
         out.h = (out.h + stride - 1) / stride;
+        std::cout << "Generated: convolve2D_r\n";
         return out;
     }
 
@@ -663,6 +674,7 @@ public:
         Stage out{conv, f.w, f.h, f.random_out_channels()};
         out.w = (out.w + stride - 1) / stride;
         out.h = (out.h + stride - 1) / stride;
+        std::cout << "Generated: convolve2D_w\n";
         return out;
     }
 
@@ -707,6 +719,7 @@ public:
         } else {
             assert(false);
         }
+        std::cout << "Generated: unsample\n";
         return s;
     }
 
@@ -742,6 +755,7 @@ public:
         } else {
             assert(false);
         }
+        std::cout << "Generated: downsample\n";
         return s;
     }
 
@@ -766,6 +780,7 @@ public:
         Expr def = random_expr(inputs, rand_int(min_depth, max_depth), func_size);
         std::cerr << def << "\n";
         binary(f.func.args()) = def;
+        std::cout << "Generated: binray_op\n";
         return {binary, f.w, f.h, std::min(f.c, g.c)};
     }
 
@@ -782,6 +797,7 @@ public:
         } else if (op_type == 2) {
             unary(f.func.args()) = sqrt(cast<float>(f.func(coords)));
         }
+        std::cout << "Generated: unary_op\n";
         return {unary, f.w, f.h, f.c};
     }
 
@@ -801,7 +817,7 @@ public:
 
         Func all("all");
         all(f.func.args()) = e;
-
+        std::cout << "Generated: all_to_all\n";
         return {all, f.w, f.h, f.random_out_channels()};
     }
 
@@ -813,7 +829,7 @@ public:
         reduction_coords[dim] = r;
         Func all("all_r");
         all(f.func.args()) += f.func(reduction_coords) * ((r + 1) * f.c + (f.func.args()[dim] + 1));
-
+        std::cout << "Generated: all_to_all_r\n";
         return {all, f.w, f.h, f.random_out_channels()};
     }
 
@@ -825,7 +841,7 @@ public:
         reduction_coords[dim] = r;
         Func all("all_w");
         all(f.func.args()) = sum(f.func(reduction_coords) * ((r + 1) * f.c + (f.func.args()[dim] + 1)));
-
+        std::cout << "Generated: all_to_all_w\n";
         return {all, f.w, f.h, f.random_out_channels()};
     }
 
@@ -845,6 +861,7 @@ public:
         coords[dim] = extent - r - 1;
         prev_coords[dim] = extent - r;
         scan(coords) += scan(prev_coords);
+        std::cout << "Generated: scan\n";
         return {scan, f.w, f.h, f.c};
     }
 
@@ -863,7 +880,7 @@ public:
         vector<Expr> coords = make_arguments(f.func.args());
         coords.back() = clamp(cast<int>(f.func(f.func.args())), 0, g.c - 1);
         sliced(f.func.args()) = g.func(coords);
-
+        std::cout << "Generated: slice\n";
         return {sliced, f.w, f.h, f.c};
     }
 
@@ -887,7 +904,7 @@ public:
         from_coords[2] = 0;
         to_coords[2] = clamp(cast<int>(f.func(from_coords) * histogram_buckets), 0, histogram_buckets - 1);
         hist(to_coords) += 1;
-
+        std::cout << "Generated: tiled_histogram\n";
         return {hist, f.w / box_size, f.h / box_size, histogram_buckets};
     }
 
@@ -925,13 +942,13 @@ public:
                 out = upsample(out, 1, factor);
             }
         }
-
         return out;
     }
 
     Stage cast_stage(Type t, Stage f) {
         Func casted("casted");
         casted(f.func.args()) = cast(t, f.func(f.func.args()));
+        std::cout << "Generated: cast_stage\n";
         return {casted, f.w, f.h, f.c};
     }
 
@@ -942,65 +959,78 @@ public:
         int i1 = m > 0 ? rand_int(i2 + 1, m) : 0;
         Stage f = s[i1], g = s[i2];
 
-        int stage_type = rand_int(0, 17);
-
+        int stage_type = rand_int(0, 2);
         if (stage_type == 0) {
-            int dim = rand_int(0, 1);
-            int kernel_min = rand_int(-3, 0);
-            int kernel_max = rand_int(0, 3);
-            return convolve(f, dim, kernel_min, kernel_max);
-        } else if (stage_type == 1) {
-            int dim = rand_int(0, 1);
-            int kernel_min = rand_int(-10, 0);
-            int kernel_max = rand_int(0, 10);
-            return convolve_r(f, dim, kernel_min, kernel_max);
-        } else if (stage_type == 2) {
-            int dim = rand_int(0, 1);
-            int kernel_min = rand_int(-10, 0);
-            int kernel_max = rand_int(0, 10);
-            return convolve_w(f, dim, kernel_min, kernel_max);
-        } else if (stage_type == 3) {
-            int kernel_min = rand_int(-5, 0);
-            int kernel_max = rand_int(0, 5);
-            return convolve2D(f, kernel_min, kernel_max);
-        } else if (stage_type == 4 && f.may_reduce_size() && f.w >= 32 && f.h >= 32) {
-            int kernel_min = rand_int(-5, 0);
-            int kernel_max = rand_int(0, 5);
-            return pool2D(f, kernel_min, kernel_max);
-        } else if (stage_type == 5) {
-            return activation(f);
-        } else if (stage_type == 6) {
-            return padding(f);
-        } else if (stage_type == 7 && f.may_increase_size()) {
-            // For now, only upsample dimensions 0 or 1.
-            return upsample(f, rand_int(0, 1));
-        } else if (stage_type == 8 && f.may_reduce_size()) {
-            // For now, only downsample dimensions 0 or 1.
-            return downsample(f, rand_int(0, 1));
-        } else if (stage_type == 9) {
-            int dim = 2;
-            return all_to_all(f, dim);
-        } else if (stage_type == 10) {
-            int dim = 2;
-            return all_to_all_r(f, dim);
-        } else if (stage_type == 11) {
-            int dim = 2;
-            return all_to_all_w(f, dim);
-        } else if (stage_type == 12) {
-            int dim = rand_int(0, 2);
-            return scan(f, dim);
-        } else if (stage_type == 13 && f.size() < 10000) {
             return unary_op(f);
-        } else if (stage_type == 14 && f.w > 32 && f.h > 32) {
-            return tiled_histogram(f);
-        } else if (stage_type == 15) {
-            return slice(f, g);
+        // } else if (stage_type == 1 && f.may_increase_size()) {
+        //     return upsample(f, rand_int(0, 1));
+        // } else if (stage_type == 2 && f.may_reduce_size()) {
+        //     // For now, only downsample dimensions 0 or 1.
+        //     return downsample(f, rand_int(0, 1));
         } else if (i1 != i2) {
             return binary_op(f, g);
         } else {
-            // Try again
             return random_stage(s);
         }
+        // int stage_type = rand_int(0, 17);
+
+        // if (stage_type == 0) {
+        //     int dim = rand_int(0, 1);
+        //     int kernel_min = rand_int(-3, 0);
+        //     int kernel_max = rand_int(0, 3);
+        //     return convolve(f, dim, kernel_min, kernel_max);
+        // } else if (stage_type == 1) {
+        //     int dim = rand_int(0, 1);
+        //     int kernel_min = rand_int(-10, 0);
+        //     int kernel_max = rand_int(0, 10);
+        //     return convolve_r(f, dim, kernel_min, kernel_max);
+        // } else if (stage_type == 2) {
+        //     int dim = rand_int(0, 1);
+        //     int kernel_min = rand_int(-10, 0);
+        //     int kernel_max = rand_int(0, 10);
+        //     return convolve_w(f, dim, kernel_min, kernel_max);
+        // } else if (stage_type == 3) {
+        //     int kernel_min = rand_int(-5, 0);
+        //     int kernel_max = rand_int(0, 5);
+        //     return convolve2D(f, kernel_min, kernel_max);
+        // } else if (stage_type == 4 && f.may_reduce_size() && f.w >= 32 && f.h >= 32) {
+        //     int kernel_min = rand_int(-5, 0);
+        //     int kernel_max = rand_int(0, 5);
+        //     return pool2D(f, kernel_min, kernel_max);
+        // } else if (stage_type == 5) {
+        //     return activation(f);
+        // } else if (stage_type == 6) {
+        //     return padding(f);
+        // } else if (stage_type == 7 && f.may_increase_size()) {
+        //     // For now, only upsample dimensions 0 or 1.
+        //     return upsample(f, rand_int(0, 1));
+        // } else if (stage_type == 8 && f.may_reduce_size()) {
+        //     // For now, only downsample dimensions 0 or 1.
+        //     return downsample(f, rand_int(0, 1));
+        // } else if (stage_type == 9) {
+        //     int dim = 2;
+        //     return all_to_all(f, dim);
+        // } else if (stage_type == 10) {
+        //     int dim = 2;
+        //     return all_to_all_r(f, dim);
+        // } else if (stage_type == 11) {
+        //     int dim = 2;
+        //     return all_to_all_w(f, dim);
+        // } else if (stage_type == 12) {
+        //     int dim = rand_int(0, 2);
+        //     return scan(f, dim);
+        // } else if (stage_type == 13 && f.size() < 10000) {
+        //     return unary_op(f);
+        // } else if (stage_type == 14 && f.w > 32 && f.h > 32) {
+        //     return tiled_histogram(f);
+        // } else if (stage_type == 15) {
+        //     return slice(f, g);
+        // } else if (i1 != i2) {
+        //     return binary_op(f, g);
+        // } else {
+        //     // Try again
+        //     return random_stage(s);
+        // }
     }
 
     void generate() {
@@ -1010,17 +1040,25 @@ public:
 
         Func first;
         first(x, y, c) = input(x, y, c);
-
         vector<Stage> stages;
         // Assume input starts at ~2000x2000
         stages.emplace_back(Stage{first, 2000, 2000, 3});
 
         for (int i = 0; i < max_stages - 2; i++) {
             Stage next = random_stage(stages);
+            std::cout << "Name: "  << next.func.name() << "\n";
             stages.push_back(next);
             if (!using_autoscheduler()) {
                 stages.back().func.compute_root().reorder(x, c, y).vectorize(x, 8).parallel(y, 8);
             }
+        }
+        std::vector<Function> funcs;
+        for (const auto& s : stages) {
+            funcs.push_back(s.func.function());
+        }
+        auto m = build_environment(funcs);
+        for (const auto &elem : m) {
+            std::cout << "mapping: " << elem.first << "\n";
         }
 
         Stage tail = stages.back();

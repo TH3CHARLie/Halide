@@ -1,6 +1,6 @@
 include ../support/Makefile.inc
 
-all: $(BIN)/test
+all: $(BIN)/random_pipeline.generator
 
 PIPELINE_SEED ?= 0
 PIPELINE_STAGES ?= 20

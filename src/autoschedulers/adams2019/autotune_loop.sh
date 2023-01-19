@@ -66,7 +66,7 @@ fi
 
 # A batch of this many samples is built in parallel, and then
 # benchmarked serially.
-BATCH_SIZE=${NUM_CORES}
+BATCH_SIZE=24
 
 TIMEOUT_CMD="timeout"
 if [ $(uname -s) = "Darwin" ] && ! which $TIMEOUT_CMD 2>&1 >/dev/null; then
@@ -98,7 +98,6 @@ make_featurization() {
         dropout=1  # 1% chance of operating entirely greedily
         beam=1
     fi
-    ${TIMEOUT_CMD} -k ${COMPILATION_TIMEOUT} ${COMPILATION_TIMEOUT} \
         ${GENERATOR} \
         -g ${PIPELINE} \
         -f ${FNAME} \
@@ -113,7 +112,6 @@ make_featurization() {
         autoscheduler.random_dropout=${dropout} \
         autoscheduler.random_dropout_seed=${SEED} \
         autoscheduler.weights_path=${WEIGHTS} \
-            2> ${D}/compile_log.txt || echo "Compilation failed or timed out for ${D}"
 
 
     # We don't need image I/O for this purpose,
@@ -209,19 +207,6 @@ for ((BATCH_ID=$((FIRST+1));BATCH_ID<$((FIRST+1+NUM_BATCHES));BATCH_ID++)); do
             echo Pipeline ID is $ID
             benchmark_sample "${DIR}/${SAMPLE_ID}" $S $ID $FNAME
         done
-
-        # retrain model weights on all samples seen so far
-        echo Retraining model...
-
-        find ${SAMPLES} -name "*.sample" | \
-            ${AUTOSCHED_BIN}/retrain_cost_model \
-                --epochs=${BATCH_SIZE} \
-                --rates="0.0001" \
-                --num_cores=${NUM_CORES} \
-                --initial_weights=${WEIGHTS} \
-                --weights_out=${WEIGHTS} \
-                --best_benchmark=${SAMPLES}/best.${PIPELINE}.benchmark.txt \
-                --best_schedule=${SAMPLES}/best.${PIPELINE}.schedule.h
     done
 
     echo Batch ${BATCH_ID} took ${SECONDS} seconds to compile, benchmark, and retrain
