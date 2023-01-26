@@ -112,6 +112,7 @@ make_featurization() {
         autoscheduler.random_dropout=${dropout} \
         autoscheduler.random_dropout_seed=${SEED} \
         autoscheduler.weights_path=${WEIGHTS} \
+            2> ${D}/compile_log.txt || echo "Compilation failed or timed out for ${D}"
 
 
     # We don't need image I/O for this purpose,
