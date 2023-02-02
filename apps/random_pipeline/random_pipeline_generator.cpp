@@ -42,6 +42,7 @@ const int expr_type_count = sizeof(expr_types) / sizeof(expr_types[0]);
 
 typedef Expr (*make_bin_op_fn)(Expr, Expr);
 
+// TODO: get rid of div and mod at this time
 make_bin_op_fn make_bin_op[] = {
     (make_bin_op_fn)
     operator+,
@@ -51,10 +52,10 @@ make_bin_op_fn make_bin_op[] = {
     operator*,
     (make_bin_op_fn)min,
     (make_bin_op_fn)max,
-    (make_bin_op_fn)
-    operator/,
-    (make_bin_op_fn)
-    operator%,
+    // (make_bin_op_fn)
+    // operator/,
+    // (make_bin_op_fn)
+    // operator%,
 };
 
 make_bin_op_fn make_bool_bin_op[] = {
@@ -98,78 +99,15 @@ Expr make_leaf(vector<Expr> inputs) {
 }
 
 Expr random_expr_inner(vector<Expr> inputs, int depth, int func_size) {
-    const int op_count = bin_op_count + bool_bin_op_count + 9;
-    const int func_size_thresh = 1e4;  // if input is too large do not use trig functions
+    const int op_count = bin_op_count + bool_bin_op_count;
+    // const int op_count = bin_op_count + bool_bin_op_count + 9;
+    // const int func_size_thresh = 1e4;  // if input is too large do not use trig functions
 
     if (depth <= 0) {
         return make_leaf(inputs);
     }
-
-    // pick a random operation to combine exprs
-    int op = rng() % op_count;  // ops need to be defined
-    switch (op) {
-    case 0:  // casting
+    int op = rng() % op_count;
     {
-        // Get a random type
-        Type convertT = random_type();
-        auto e1 = random_expr_inner(inputs, depth, func_size);
-        return cast(convertT, e1);
-    }
-    case 1:  // select operation
-    {
-        auto c = random_condition(inputs, depth - 2, func_size);  // arbitrarily chose to make condition expression shorter
-        auto e1 = random_expr_inner(inputs, depth - 1, func_size);
-        auto e2 = random_expr_inner(inputs, depth - 2, func_size);
-        // make sure e1 and e2 have the same type
-        if (e1.type() != e2.type()) {
-            e2 = cast(e1.type(), e2);
-        }
-        return select(c, e1, e2);
-    }
-    case 2:  // unary boolean op
-    {
-        auto e1 = random_expr_inner(inputs, depth - 1, func_size);
-        if (e1.type().is_bool()) {
-            return !e1;
-        }
-        break;
-    }
-    case 3:  // sin
-    {
-        if (func_size > func_size_thresh)
-            break;
-        auto e1 = random_expr_inner(inputs, depth - 1, func_size);
-        return sin(cast<float>(e1));
-    }
-    case 4:  // tanh
-    {
-        if (func_size > func_size_thresh) {
-            // Don't use expensive ops if the function is very large
-            break;
-        }
-        auto e1 = random_expr_inner(inputs, depth - 1, func_size);
-        return tanh(cast<float>(e1));
-    }
-    case 5:  // exp
-    {
-        auto e1 = random_expr_inner(inputs, depth - 1, func_size);
-        return fast_exp(cast<float>(e1));
-    }
-    case 6:  // sqrt
-    {
-        auto e1 = random_expr_inner(inputs, depth - 1, func_size);
-        return sqrt(cast<float>(e1));
-    }
-    case 7:  // log
-    {
-        auto e1 = random_expr_inner(inputs, depth - 1, func_size);
-        return fast_log(cast<float>(e1));
-    }
-    case 8:  // condition
-    {
-        return random_condition(inputs, depth - 1, func_size);
-    }
-    default:  // binary op
         make_bin_op_fn maker;
         auto e1 = random_expr_inner(inputs, depth - 1, func_size);
         auto e2 = random_expr_inner(inputs, depth - 2, func_size);
@@ -181,6 +119,82 @@ Expr random_expr_inner(vector<Expr> inputs, int depth, int func_size) {
 
         return maker(e1, e2);
     }
+    // // pick a random operation to combine exprs
+    // int op = rng() % op_count;  // ops need to be defined
+    // switch (op) {
+    // case 0:  // casting
+    // {
+    //     // Get a random type
+    //     Type convertT = random_type();
+    //     auto e1 = random_expr_inner(inputs, depth, func_size);
+    //     return cast(convertT, e1);
+    // }
+    // case 1:  // select operation
+    // {
+    //     auto c = random_condition(inputs, depth - 2, func_size);  // arbitrarily chose to make condition expression shorter
+    //     auto e1 = random_expr_inner(inputs, depth - 1, func_size);
+    //     auto e2 = random_expr_inner(inputs, depth - 2, func_size);
+    //     // make sure e1 and e2 have the same type
+    //     if (e1.type() != e2.type()) {
+    //         e2 = cast(e1.type(), e2);
+    //     }
+    //     return select(c, e1, e2);
+    // }
+    // case 2:  // unary boolean op
+    // {
+    //     auto e1 = random_expr_inner(inputs, depth - 1, func_size);
+    //     if (e1.type().is_bool()) {
+    //         return !e1;
+    //     }
+    //     break;
+    // }
+    // case 3:  // sin
+    // {
+    //     if (func_size > func_size_thresh)
+    //         break;
+    //     auto e1 = random_expr_inner(inputs, depth - 1, func_size);
+    //     return sin(cast<float>(e1));
+    // }
+    // case 4:  // tanh
+    // {
+    //     if (func_size > func_size_thresh) {
+    //         // Don't use expensive ops if the function is very large
+    //         break;
+    //     }
+    //     auto e1 = random_expr_inner(inputs, depth - 1, func_size);
+    //     return tanh(cast<float>(e1));
+    // }
+    // case 5:  // exp
+    // {
+    //     auto e1 = random_expr_inner(inputs, depth - 1, func_size);
+    //     return fast_exp(cast<float>(e1));
+    // }
+    // case 6:  // sqrt
+    // {
+    //     auto e1 = random_expr_inner(inputs, depth - 1, func_size);
+    //     return sqrt(cast<float>(e1));
+    // }
+    // case 7:  // log
+    // {
+    //     auto e1 = random_expr_inner(inputs, depth - 1, func_size);
+    //     return fast_log(cast<float>(e1));
+    // }
+    // case 8:  // condition
+    // {
+    //     return random_condition(inputs, depth - 1, func_size);
+    // }
+    // default:  // binary op
+    //     make_bin_op_fn maker;
+    //     auto e1 = random_expr_inner(inputs, depth - 1, func_size);
+    //     auto e2 = random_expr_inner(inputs, depth - 2, func_size);
+    //     if (e1.type().is_bool() && e2.type().is_bool()) {
+    //         maker = make_bool_bin_op[op % bool_bin_op_count];
+    //     } else {
+    //         maker = make_bin_op[op % bin_op_count];
+    //     }
+
+    //     return maker(e1, e2);
+    // }
 
     // selected case did not return an expression, try again
     return random_expr_inner(inputs, depth, func_size);
