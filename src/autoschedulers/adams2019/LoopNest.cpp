@@ -1298,6 +1298,10 @@ void LoopNest::compute_here(const FunctionDAG::Node *f, bool tileable, int v, co
                 f->stages[s].loop[i].var == f->func.args()[v]) {
                 node->vectorized_loop_index = (int)i;
                 vector_size = (int64_t)(node->stage->vector_size);
+                // Never vectorize wider than the region required, because those
+                // are the bounds that producers to this Func use to estimate
+                // their own bounds.
+                vector_size = std::min(vector_size, node->size[i]);
                 single_point->loops(s, i).set_extent(vector_size);
                 node->size[i] += vector_size - 1;
                 node->size[i] /= vector_size;
@@ -1608,7 +1612,8 @@ vector<IntrusivePtr<const LoopNest>> LoopNest::compute_in_tiles(const FunctionDA
 
         // See if it's appropriate to slide over this loop Can't
         // slide at the root level if we intend to parallelize it.
-        bool may_slide = (params.parallelism == 1) || !is_root();
+        bool may_slide = false;
+        // bool may_slide = (params.parallelism == 1) || !is_root();
 
         const auto &c = children[child];
         int num_ones = 0;

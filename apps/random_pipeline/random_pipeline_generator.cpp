@@ -272,9 +272,10 @@ public:
     // The random seed to use to generate the pipeline.
     GeneratorParam<int> seed{"seed", 1};
     // The approximate max number of stages to generate in the random pipeline.
-    GeneratorParam<int> max_stages{"max_stages", 20};
+    GeneratorParam<int> max_stages{"max_stages", 5};
 
-    Input<Buffer<float>> input{"input", 3};
+    // TODO: do uint32_t to prevent UB
+    Input<Buffer<uint32_t>> input{"input", 3};
     Input<Buffer<uint8_t>> uint8_weights{"uint8_weights", 4};
     Input<Buffer<uint16_t>> uint16_weights{"uint16_weights", 4};
     Input<Buffer<uint32_t>> uint32_weights{"uint32_weights", 4};
@@ -283,7 +284,7 @@ public:
     Input<Buffer<int32_t>> int32_weights{"int32_weights", 4};
     Input<Buffer<float>> float32_weights{"float32_weights", 4};
 
-    Output<Buffer<float>> output{"output", 3};
+    Output<Buffer<uint32_t>> output{"output", 3};
 
     void set_upcast_types(Type input_type, Type &mult_type, Type &sum_type) {
         if (input_type.is_bool()) {
@@ -360,16 +361,18 @@ public:
             int sz = size();
             int max_factor = (max_size + sz - 1) / sz;
             if (max_factor <= 1) return 1;
-            int log_max_factor = std::ceil(std::log(max_factor) / std::log(2));
-            int factor = 1 << rand_int(std::max(1, log_max_factor - 3), log_max_factor);
-            return factor;
+            return 2;
+            // int log_max_factor = std::ceil(std::log(max_factor) / std::log(2));
+            // int factor = 1 << rand_int(std::max(1, log_max_factor - 3), log_max_factor);
+            // return factor;
         }
 
         int random_size_reduce_factor() const {
             int sz = size();
             int max_factor = (sz + min_size - 1) / min_size;
             if (max_factor <= 1) return 1;
-            return std::min(8, 1 << rand_int(1, std::ceil(std::log(max_factor) / std::log(2))));
+            return 2;
+            // return std::min(8, 1 << rand_int(1, std::ceil(std::log(max_factor) / std::log(2))));
         }
 
         int random_out_channels() const {
@@ -973,12 +976,13 @@ public:
         int i1 = m > 0 ? rand_int(i2 + 1, m) : 0;
         Stage f = s[i1], g = s[i2];
 
-        int stage_type = rand_int(0, 4);
-        if (stage_type == 0) {
-            return unary_op(f);
-        } else if (stage_type == 1 && f.may_increase_size()) {
+        int stage_type = rand_int(0, 3);
+        // if (stage_type == 0) {
+        //     return unary_op(f);
+        if (stage_type == 0 && f.may_increase_size()) {
+        // } else if (stage_type == 1 && f.may_increase_size()) {
             return upsample(f, rand_int(0, 1));
-        } else if (stage_type == 2 && f.may_reduce_size()) {
+        } else if (stage_type == 1 && f.may_reduce_size()) {
             // For now, only downsample dimensions 0 or 1.
             return downsample(f, rand_int(0, 1));
         // } else if (stage_type == 1) {
@@ -996,6 +1000,7 @@ public:
         //     int kernel_min = rand_int(-10, 0);
         //     int kernel_max = rand_int(0, 10);
         //     return convolve_w(f, dim, kernel_min, kernel_max);
+        // TODO: change this to always true to make sure we can generate schedules
         } else if (i1 != i2) {
             return binary_op(f, g);
         } else {
