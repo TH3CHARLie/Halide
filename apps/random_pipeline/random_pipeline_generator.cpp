@@ -722,10 +722,15 @@ public:
             Type mult_type, sum_type;
             Type input_type = f.func.value().type();
             set_upcast_types(input_type, mult_type, sum_type);
+            s1 = cast(mult_type, s1);
+            s2 = cast(mult_type, s2);
+            x = cast(mult_type, x);
+            s1 *= factor - x;
+            s2 *= x;
             s1 = cast(sum_type, s1);
             s2 = cast(sum_type, s2);
 
-            resampled(f.func.args()) = cast(input_type, ((factor - x) * s1 + x * s2) / (2 * factor));
+            resampled(f.func.args()) = cast(input_type, (s1 + s2) / (2 * factor));
         }
 
         Stage s{resampled, f.w, f.h, f.c};
