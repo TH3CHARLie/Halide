@@ -261,29 +261,33 @@ void State::generate_children(const FunctionDAG &dag,
 
     if (phase == 0) {
         // Injecting realizations
-        {
-            // 1) Inline it
-            if (node->stages.size() == 1 && !node->is_output) {
-                auto child = make_child();
-                LoopNest *new_root = new LoopNest;
-                new_root->copy_from(*root);
-                new_root->inline_func(node);
-                child->root = new_root;
-                child->num_decisions_made++;
-                if (child->calculate_cost(dag, params, cost_model, cache->options)) {
-                    num_children++;
-                    accept_child(std::move(child));
-                }
-            }
-        }
+        // TODO: remove this whole block
+        // if this breaks, move to line 297
+        // {
+        //     // 1) Inline it
+        //     if (node->stages.size() == 1 && !node->is_output) {
+        //         auto child = make_child();
+        //         LoopNest *new_root = new LoopNest;
+        //         new_root->copy_from(*root);
+        //         new_root->inline_func(node);
+        //         child->root = new_root;
+        //         child->num_decisions_made++;
+        //         if (child->calculate_cost(dag, params, cost_model, cache->options)) {
+        //             num_children++;
+        //             accept_child(std::move(child));
+        //         }
+        //     }
+        // }
 
         // Some search-space pruning. If a node is pointwise, and
         // so are all its inputs and so is its sole output, and
         // inlining it is legal, just inline it. This saves time
         // on long chains of pointwise things.
-        bool must_inline = (node->is_pointwise &&
-                            (num_children > 0) &&
-                            (node->outgoing_edges.size() == 1));
+        // TODO: make this always false
+        // bool must_inline = (node->is_pointwise &&
+        //                     (num_children > 0) &&
+        //                     (node->outgoing_edges.size() == 1));
+        bool must_inline = false;
         if (must_inline) {
             for (const auto *e : node->stages[0].incoming_edges) {
                 must_inline &= e->producer->is_pointwise;
