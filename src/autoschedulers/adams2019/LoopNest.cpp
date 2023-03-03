@@ -1581,9 +1581,9 @@ vector<IntrusivePtr<const LoopNest>> LoopNest::compute_in_tiles(const FunctionDA
             outer->children.emplace_back(inner);
 
             // HACK
-            bool may_slide = false;
-            // bool may_slide = (!in_realization &&
-            //                   f->stages.size() == 1);
+            // bool may_slide = false;
+            bool may_slide = (!in_realization &&
+                              f->stages.size() == 1);
             if (may_slide) {
                 // Store here, but compute further in. Currently
                 // don't have to worry about the constraints this
@@ -1612,8 +1612,8 @@ vector<IntrusivePtr<const LoopNest>> LoopNest::compute_in_tiles(const FunctionDA
 
         // See if it's appropriate to slide over this loop Can't
         // slide at the root level if we intend to parallelize it.
-        bool may_slide = false;
-        // bool may_slide = (params.parallelism == 1) || !is_root();
+        // bool may_slide = false;
+        bool may_slide = (params.parallelism == 1) || !is_root();
 
         const auto &c = children[child];
         int num_ones = 0;
