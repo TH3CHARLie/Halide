@@ -981,13 +981,13 @@ public:
         int i1 = m > 0 ? rand_int(i2 + 1, m) : 0;
         Stage f = s[i1], g = s[i2];
 
-        int stage_type = rand_int(0, 3);
-        // if (stage_type == 0) {
-        //     return unary_op(f);
-        if (stage_type == 0 && f.may_increase_size()) {
-        // } else if (stage_type == 1 && f.may_increase_size()) {
+        int stage_type = rand_int(0, 4);
+        if (stage_type == 0) {
+            return unary_op(f);
+        // if (stage_type == 0 && f.may_increase_size()) {
+        } else if (stage_type == 1 && f.may_increase_size()) {
             return upsample(f, rand_int(0, 1));
-        } else if (stage_type == 1 && f.may_reduce_size()) {
+        } else if (stage_type == 2 && f.may_reduce_size()) {
             // For now, only downsample dimensions 0 or 1.
             return downsample(f, rand_int(0, 1));
         // } else if (stage_type == 1) {
