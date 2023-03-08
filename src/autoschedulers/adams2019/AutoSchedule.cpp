@@ -599,7 +599,7 @@ struct Adams2019 {
             parser.parse("memory_limit", &params.memory_limit);
             parser.finish();
         }
-        // params.disable_subtiling = 1;
+        params.disable_subtiling = 1;
         Autoscheduler::generate_schedule(outputs, target, params, results);
         results->autoscheduler_params = params_in;
     }
