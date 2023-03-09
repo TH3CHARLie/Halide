@@ -132,7 +132,7 @@ make_featurization() {
 benchmark_sample() {
     sleep 1 # Give CPU clocks a chance to spin back up if we're thermally throttling
     D=${1}
-    HL_NUM_THREADS=${NUM_CORES} \
+    HL_NUM_THREADS=1 \
         ${TIMEOUT_CMD} -k ${BENCHMARKING_TIMEOUT} ${BENCHMARKING_TIMEOUT} \
         ${D}/bench \
         --estimate_all \
