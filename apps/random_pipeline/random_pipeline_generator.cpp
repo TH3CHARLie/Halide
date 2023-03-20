@@ -127,6 +127,10 @@ Expr random_expr_inner(vector<Expr> inputs, int depth, int func_size) {
         // Get a random type
         Type convertT = random_type();
         auto e1 = random_expr_inner(inputs, depth, func_size);
+        // when e1 is float and convertT is not float
+        if (e1.type().is_float() && ! convertT.is_float()) {
+            return saturating_cast(convertT, e1);
+        }
         return cast(convertT, e1);
     }
     case 1:  // select operation
