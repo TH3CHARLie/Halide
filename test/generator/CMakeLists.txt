@@ -125,6 +125,16 @@ function(_add_one_aot_test TARGET)
     if ("${Halide_TARGET}" MATCHES "cuda")
         target_compile_definitions("${TARGET}" PRIVATE TEST_CUDA)
     endif ()
+    if ("${Halide_TARGET}" MATCHES "webgpu")
+        target_compile_definitions("${TARGET}" PRIVATE TEST_WEBGPU)
+        target_include_directories("${TARGET}" PRIVATE ${args_INCLUDES} "${Halide_SOURCE_DIR}/src/runtime")
+        if ("${Halide_TARGET}" MATCHES "wasmrt")
+            # nothing
+        else ()
+            # TODO: Remove this once Emscripten and Dawn agree with each other.
+            target_compile_definitions("${TARGET}" PRIVATE WITH_DAWN_NATIVE)
+        endif ()
+    endif ()
     if (TARGET_NVPTX AND Halide_TARGET MATCHES "cuda")
         target_link_libraries("${TARGET}" PRIVATE CUDA::cuda_driver CUDA::cudart)
     endif ()
@@ -160,9 +170,17 @@ function(_add_halide_aot_tests NAME)
     set(TARGET_CPP "generator_aotcpp_${NAME}")
 
     if (${_USING_WASM})
+        if ("${Halide_TARGET}" MATCHES "webgpu")
+            set(OPTIONS "-DTEST_WEBGPU")
+            if (WEBGPU_NODE_BINDINGS)
+                # for mini_webgpu.h
+                list(APPEND args_INCLUDES "${Halide_SOURCE_DIR}/src/runtime")
+            endif ()
+        endif ()
         add_wasm_executable("${TARGET}"
                             SRCS "${NAME}_aottest.cpp"
                             DEPS ${args_HALIDE_LIBRARIES} ${args_HALIDE_RUNTIME} ${args_DEPS}
+                            OPTIONS "${OPTIONS}"
                             INCLUDES
                             ${args_INCLUDES}
                             "${Halide_BINARY_DIR}/include"
@@ -470,13 +488,17 @@ _add_halide_aot_tests(metadata_tester
 
 # msan_aottest.cpp
 # msan_generator.cpp
-_add_halide_libraries(msan
-                      FEATURES msan
-                      # Broken for C++ backend (https://github.com/halide/Halide/issues/7273)
-                      OMIT_C_BACKEND)
-_add_halide_aot_tests(msan
-                      OMIT_C_BACKEND
-                      GROUPS multithreaded)
+if ("${Halide_TARGET}" MATCHES "webgpu")
+    message(WARNING "Test generator_aot_msan is not supported under WebGPU")
+else()
+    _add_halide_libraries(msan
+                          FEATURES msan
+                          # Broken for C++ backend (https://github.com/halide/Halide/issues/7273)
+                          OMIT_C_BACKEND)
+    _add_halide_aot_tests(msan
+                          OMIT_C_BACKEND
+                          GROUPS multithreaded)
+endif()
 
 # (Doesn't build/link properly on windows / under wasm)
 if (NOT Halide_TARGET MATCHES "windows" AND NOT CMAKE_SYSTEM_NAME MATCHES "Windows" AND NOT ${_USING_WASM})
@@ -508,7 +530,7 @@ _add_halide_aot_tests(multitarget
 add_halide_generator(nested_externs.generator SOURCES nested_externs_generator.cpp)
 set(NESTED_EXTERNS_LIBS nested_externs_root nested_externs_inner nested_externs_combine nested_externs_leaf)
 foreach (LIB IN LISTS NESTED_EXTERNS_LIBS)
-    _add_halide_libraries(${LIB} FROM nested_externs.generator GENERATOR_NAME ${LIB})
+    _add_halide_libraries(${LIB} FROM nested_externs.generator GENERATOR_NAME ${LIB} FEATURES user_context c_plus_plus_name_mangling)
 endforeach ()
 _add_halide_aot_tests(nested_externs
                       HALIDE_LIBRARIES ${NESTED_EXTERNS_LIBS})

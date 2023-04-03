@@ -96,8 +96,17 @@ static_assert(((HALIDE_RUNTIME_BUFFER_ALLOCATION_ALIGNMENT & (HALIDE_RUNTIME_BUF
 
 #else
 
-    // Not Windows, Android, or Apple: just asuume it's ok
-    #define HALIDE_RUNTIME_BUFFER_USE_ALIGNED_ALLOC 1
+    #if defined(__GLIBCXX__) && !defined(_GLIBCXX_HAVE_ALIGNED_ALLOC)
+
+        // ARM GNU-A baremetal compiler doesn't provide aligned_alloc as of 12.2
+        #define HALIDE_RUNTIME_BUFFER_USE_ALIGNED_ALLOC 0
+
+    #else
+
+        // Not Windows, Android, or Apple: just assume it's ok
+        #define HALIDE_RUNTIME_BUFFER_USE_ALIGNED_ALLOC 1
+
+    #endif
 
 #endif
 // clang-format on
@@ -326,7 +335,7 @@ private:
                        "Call device_free explicitly if you want to drop dirty device-side data. "
                        "Call copy_to_host explicitly if you want the data copied to the host allocation "
                        "before the device allocation is freed.");
-                int result = 0;
+                int result = halide_error_code_success;
                 if (dev_ref_count && dev_ref_count->ownership == BufferDeviceOwnership::WrappedNative) {
                     result = buf.device_interface->detach_native(nullptr, &buf);
                 } else if (dev_ref_count && dev_ref_count->ownership == BufferDeviceOwnership::AllocatedDeviceAndHost) {
@@ -337,7 +346,7 @@ private:
                     result = buf.device_interface->device_free(nullptr, &buf);
                 }
                 // No reasonable way to return the error, but we can at least assert-fail in debug builds.
-                assert((result == 0) && "device_interface call returned a nonzero result in Buffer::decref()");
+                assert((result == halide_error_code_success) && "device_interface call returned a nonzero result in Buffer::decref()");
                 (void)result;
             }
             if (dev_ref_count) {
@@ -498,7 +507,7 @@ private:
 
     void complete_device_crop(Buffer<T, Dims, InClassDimStorage> &result_host_cropped) const {
         assert(buf.device_interface != nullptr);
-        if (buf.device_interface->device_crop(nullptr, &this->buf, &result_host_cropped.buf) == 0) {
+        if (buf.device_interface->device_crop(nullptr, &this->buf, &result_host_cropped.buf) == halide_error_code_success) {
             const Buffer<T, Dims, InClassDimStorage> *cropped_from = this;
             // TODO: Figure out what to do if dev_ref_count is nullptr. Should incref logic run here?
             // is it possible to get to this point without incref having run at least once since
@@ -530,7 +539,7 @@ private:
 
     void complete_device_slice(Buffer<T, AnyDims, InClassDimStorage> &result_host_sliced, int d, int pos) const {
         assert(buf.device_interface != nullptr);
-        if (buf.device_interface->device_slice(nullptr, &this->buf, d, pos, &result_host_sliced.buf) == 0) {
+        if (buf.device_interface->device_slice(nullptr, &this->buf, d, pos, &result_host_sliced.buf) == halide_error_code_success) {
             const Buffer<T, Dims, InClassDimStorage> *sliced_from = this;
             // TODO: Figure out what to do if dev_ref_count is nullptr. Should incref logic run here?
             // is it possible to get to this point without incref having run at least once since
@@ -1748,14 +1757,14 @@ public:
         if (device_dirty()) {
             return buf.device_interface->copy_to_host(ctx, &buf);
         }
-        return 0;
+        return halide_error_code_success;
     }
 
     int copy_to_device(const struct halide_device_interface_t *device_interface, void *ctx = nullptr) {
         if (host_dirty()) {
             return device_interface->copy_to_device(ctx, &buf, device_interface);
         }
-        return 0;
+        return halide_error_code_success;
     }
 
     int device_malloc(const struct halide_device_interface_t *device_interface, void *ctx = nullptr) {
@@ -1774,7 +1783,7 @@ public:
                    "Don't call device_free on Halide buffers that you have copied or "
                    "passed by value.");
         }
-        int ret = 0;
+        int ret = halide_error_code_success;
         if (buf.device_interface) {
             ret = buf.device_interface->device_free(ctx, &buf);
         }
@@ -1806,7 +1815,7 @@ public:
                "allocation. Freeing it could create dangling references. "
                "Don't call device_detach_native on Halide buffers that you "
                "have copied or passed by value.");
-        int ret = 0;
+        int ret = halide_error_code_success;
         if (buf.device_interface) {
             ret = buf.device_interface->detach_native(ctx, &buf);
         }
@@ -1831,7 +1840,7 @@ public:
                    "Don't call device_and_host_free on Halide buffers that you have copied or "
                    "passed by value.");
         }
-        int ret = 0;
+        int ret = halide_error_code_success;
         if (buf.device_interface) {
             ret = buf.device_interface->device_and_host_free(ctx, &buf);
         }
@@ -2163,9 +2172,13 @@ private:
         }
     }
 
+    // Return pair is <new_dimensions, innermost_strides_are_one>
     template<int N>
-    HALIDE_NEVER_INLINE static bool for_each_value_prep(for_each_value_task_dim<N> *t,
-                                                        const halide_buffer_t **buffers) {
+    HALIDE_NEVER_INLINE static std::pair<int, bool> for_each_value_prep(for_each_value_task_dim<N> *t,
+                                                                        const halide_buffer_t **buffers) {
+        const int dimensions = buffers[0]->dimensions;
+        assert(dimensions > 0);
+
         // Check the buffers all have clean host allocations
         for (int i = 0; i < N; i++) {
             if (buffers[i]->device) {
@@ -2178,8 +2191,6 @@ private:
                        "Buffer passed to for_each_value has no host or device allocation");
             }
         }
-
-        const int dimensions = buffers[0]->dimensions;
 
         // Extract the strides in all the dimensions
         for (int i = 0; i < dimensions; i++) {
@@ -2210,42 +2221,47 @@ private:
             }
             if (flat) {
                 t[i - 1].extent *= t[i].extent;
-                for (int j = i; j < d; j++) {
+                for (int j = i; j < d - 1; j++) {
                     t[j] = t[j + 1];
                 }
                 i--;
                 d--;
-                t[d].extent = 1;
             }
         }
 
+        // Note that we assert() that dimensions > 0 above
+        // (our one-and-only caller will only call us that way)
+        // so the unchecked access to t[0] should be safe.
         bool innermost_strides_are_one = true;
-        if (dimensions > 0) {
-            for (int i = 0; i < N; i++) {
-                innermost_strides_are_one &= (t[0].stride[i] == 1);
-            }
+        for (int i = 0; i < N; i++) {
+            innermost_strides_are_one &= (t[0].stride[i] == 1);
         }
 
-        return innermost_strides_are_one;
+        return {d, innermost_strides_are_one};
     }
 
     template<typename Fn, typename... Args, int N = sizeof...(Args) + 1>
     void for_each_value_impl(Fn &&f, Args &&...other_buffers) const {
         if (dimensions() > 0) {
+            const size_t alloc_size = dimensions() * sizeof(for_each_value_task_dim<N>);
             Buffer<>::for_each_value_task_dim<N> *t =
-                (Buffer<>::for_each_value_task_dim<N> *)HALIDE_ALLOCA((dimensions() + 1) * sizeof(for_each_value_task_dim<N>));
+                (Buffer<>::for_each_value_task_dim<N> *)HALIDE_ALLOCA(alloc_size);
             // Move the preparatory code into a non-templated helper to
             // save code size.
             const halide_buffer_t *buffers[] = {&buf, (&other_buffers.buf)...};
-            bool innermost_strides_are_one = Buffer<>::for_each_value_prep(t, buffers);
-
-            Buffer<>::for_each_value_helper(f, dimensions() - 1,
-                                            innermost_strides_are_one,
-                                            t,
-                                            data(), (other_buffers.data())...);
-        } else {
-            f(*data(), (*other_buffers.data())...);
+            auto [new_dims, innermost_strides_are_one] = Buffer<>::for_each_value_prep(t, buffers);
+            if (new_dims > 0) {
+                Buffer<>::for_each_value_helper(f, new_dims - 1,
+                                                innermost_strides_are_one,
+                                                t,
+                                                data(), (other_buffers.data())...);
+                return;
+            }
+            // else fall thru
         }
+
+        // zero-dimensional case
+        f(*data(), (*other_buffers.data())...);
     }
     // @}
 

@@ -109,7 +109,7 @@ public:
         }
     }
 
-#if (LOG_EXPR_MUTATORIONS || LOG_STMT_MUTATIONS)
+#if (LOG_EXPR_MUTATIONS || LOG_STMT_MUTATIONS)
     static int debug_indent;
 #endif
 
@@ -288,9 +288,6 @@ public:
         f.learn_false(fact);
         return f;
     }
-
-    template<typename T>
-    Expr hoist_slice_vector(Expr e);
 
     Stmt mutate_let_body(const Stmt &s, ExprInfo *) {
         return mutate(s);

@@ -11,7 +11,8 @@ int main(int argc, char **argv) {
     auto val = Buffer<float, 0>::make_scalar();
     val() = 38.5f;
 
-    nested_externs_root(val, buf);
+    void const *ucon = nullptr;
+    nested_externs_root(ucon, val, buf);
 
     buf.for_each_element([&](int x, int y, int c) {
         const float correct = 158.0f;
@@ -19,7 +20,7 @@ int main(int argc, char **argv) {
         if (actual != correct) {
             printf("result(%d, %d, %d) = %f instead of %f\n",
                    x, y, c, actual, correct);
-            exit(-1);
+            exit(1);
         }
     });
 

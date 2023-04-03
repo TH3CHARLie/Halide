@@ -227,6 +227,8 @@ public:
             check(std::string("packssdw") + check_suffix, 4 * w, i16_sat(i32_1));
             check(std::string("packsswb") + check_suffix, 8 * w, i8_sat(i16_1));
             check(std::string("packuswb") + check_suffix, 8 * w, u8_sat(i16_1));
+            check(std::string("packssdw") + check_suffix, 8 * w, u8_sat(i32_1));
+            check(std::string("packssdw") + check_suffix, 8 * w, i8_sat(i32_1));
 
             // Sum-of-absolute-difference ops
             {
@@ -310,6 +312,10 @@ public:
                 check(check_pmaddubsw, 4 * w, sum(u16(in_u8(2 * x + r2))));
                 check(check_pmaddubsw, 4 * w, sum(i16(in_u8(2 * x + r2))));
                 check(check_pmaddubsw, 4 * w, sum(i16(in_i8(2 * x + r2))));
+
+                check(check_pmaddubsw, 4 * w, u16(in_u8(2 * x)) + in_u8(2 * x + 1));
+                check(check_pmaddubsw, 4 * w, i16(in_u8(2 * x)) + in_u8(2 * x + 1));
+                check(check_pmaddubsw, 4 * w, i16(in_i8(2 * x)) + in_i8(2 * x + 1));
             }
         }
 
@@ -325,6 +331,8 @@ public:
             // And also for dot-products
             RDom r4(0, 4);
             check(check_pmaddwd, 2 * w, sum(i32(in_i16(x * 4 + r4)) * in_i16(x * 4 + r4 + 32)));
+
+            check(check_pmaddwd, 2 * w, i32(in_i16(x * 2)) + in_i16(x * 2 + 1));
 
             // Also generate for widening_mul
             check(check_pmaddwd, 2 * w, i32(i16_1) * i32(i16_2));

@@ -7,11 +7,13 @@
 #include "IROperator.h"
 #include "LLVM_Headers.h"
 #include "Simplify.h"
+#include "Substitute.h"
 #include "Util.h"
 
 namespace Halide {
 namespace Internal {
 
+using std::pair;
 using std::string;
 using std::vector;
 
@@ -193,6 +195,7 @@ const x86Intrinsic intrinsic_defs[] = {
     {"packuswbx16", UInt(8, 16), "saturating_narrow", {Int(16, 16)}},
 
     // Widening multiplies that use (v)pmaddwd
+    {"wmul_pmaddwd_avx512", Int(32, 16), "widening_mul", {Int(16, 16), Int(16, 16)}, Target::AVX512_Skylake},
     {"wmul_pmaddwd_avx2", Int(32, 8), "widening_mul", {Int(16, 8), Int(16, 8)}, Target::AVX2},
     {"wmul_pmaddwd_sse2", Int(32, 4), "widening_mul", {Int(16, 4), Int(16, 4)}},
 
@@ -219,15 +222,21 @@ const x86Intrinsic intrinsic_defs[] = {
     {"llvm.x86.ssse3.pmadd.ub.sw.128", Int(16, 8), "saturating_dot_product", {UInt(8, 16), Int(8, 16)}, Target::SSE41},
 
     // Horizontal widening adds using 2-way dot products.
-    {"hadd_pmadd_u8_sse3", UInt(16, 8), "horizontal_widening_add", {UInt(8, 16)}, Target::SSE41},
-    {"hadd_pmadd_u8_sse3", Int(16, 8), "horizontal_widening_add", {UInt(8, 16)}, Target::SSE41},
-    {"hadd_pmadd_i8_sse3", Int(16, 8), "horizontal_widening_add", {Int(8, 16)}, Target::SSE41},
+    {"hadd_pmadd_u8_avx512", UInt(16, 32), "horizontal_widening_add", {UInt(8, 64)}, Target::AVX512_Skylake},
+    {"hadd_pmadd_u8_avx512", Int(16, 32), "horizontal_widening_add", {UInt(8, 64)}, Target::AVX512_Skylake},
+    {"hadd_pmadd_i8_avx512", Int(16, 32), "horizontal_widening_add", {Int(8, 64)}, Target::AVX512_Skylake},
     {"hadd_pmadd_u8_avx2", UInt(16, 16), "horizontal_widening_add", {UInt(8, 32)}, Target::AVX2},
     {"hadd_pmadd_u8_avx2", Int(16, 16), "horizontal_widening_add", {UInt(8, 32)}, Target::AVX2},
     {"hadd_pmadd_i8_avx2", Int(16, 16), "horizontal_widening_add", {Int(8, 32)}, Target::AVX2},
+    {"hadd_pmadd_u8_sse3", UInt(16, 8), "horizontal_widening_add", {UInt(8, 16)}, Target::SSE41},
+    {"hadd_pmadd_u8_sse3", Int(16, 8), "horizontal_widening_add", {UInt(8, 16)}, Target::SSE41},
+    {"hadd_pmadd_i8_sse3", Int(16, 8), "horizontal_widening_add", {Int(8, 16)}, Target::SSE41},
+
+    {"hadd_pmadd_i16_avx512", Int(32, 16), "horizontal_widening_add", {Int(16, 32)}, Target::AVX512_Skylake},
+    {"hadd_pmadd_i16_avx2", Int(32, 8), "horizontal_widening_add", {Int(16, 16)}, Target::AVX2},
+    {"hadd_pmadd_i16_sse2", Int(32, 4), "horizontal_widening_add", {Int(16, 8)}},
 
     {"llvm.x86.avx512.pmaddw.d.512", Int(32, 16), "dot_product", {Int(16, 32), Int(16, 32)}, Target::AVX512_Skylake},
-    {"llvm.x86.avx512.pmaddw.d.512", Int(32, 16), "dot_product", {Int(16, 32), Int(16, 32)}, Target::AVX512_Cannonlake},
     {"llvm.x86.avx2.pmadd.wd", Int(32, 8), "dot_product", {Int(16, 16), Int(16, 16)}, Target::AVX2},
     {"llvm.x86.sse2.pmadd.wd", Int(32, 4), "dot_product", {Int(16, 8), Int(16, 8)}},
 
@@ -586,7 +595,12 @@ void CodeGen_X86::visit(const Call *op) {
             codegen(saturating_sub(op->args[0], op->args[1]) | saturating_sub(op->args[1], op->args[0]));
             return;
         } else if (op->args[0].type().is_int()) {
-            codegen(Max::make(op->args[0], op->args[1]) - Min::make(op->args[0], op->args[1]));
+            // In the signed case, we take the min/max, cast them to unsigned,
+            // and subtract. The cast to unsigned may wrap, but if it does, so
+            // will the subtract.
+            codegen(
+                cast(op->type, Max::make(op->args[0], op->args[1])) -
+                cast(op->type, Min::make(op->args[0], op->args[1])));
             return;
         }
     }
@@ -614,6 +628,20 @@ void CodeGen_X86::visit(const Call *op) {
             if (value) {
                 return;
             }
+        }
+    }
+
+    static const vector<pair<Expr, Expr>> cast_rewrites = {
+        // Some double-narrowing saturating casts can be better expressed as
+        // combinations of single-narrowing saturating casts.
+        {u8_sat(wild_i32x_), u8_sat(i16_sat(wild_i32x_))},
+        {i8_sat(wild_i32x_), i8_sat(i16_sat(wild_i32x_))},
+    };
+    for (const auto &i : cast_rewrites) {
+        if (expr_match(i.first, op, matches)) {
+            Expr replacement = substitute("*", matches[0], with_lanes(i.second, op->type.lanes()));
+            value = codegen(replacement);
+            return;
         }
     }
 
@@ -697,12 +725,11 @@ void CodeGen_X86::codegen_vector_reduce(const VectorReduce *op, const Expr &init
 
         {VectorReduce::Add, 2, wild_f32x_ * wild_f32x_, "dot_product", BFloat(16), Pattern::CombineInit},
 
-        // One could do a horizontal widening addition with
-        // other dot_products against a vector of ones. Currently disabled
-        // because I haven't found other cases where it's clearly better.
+        // Horizontal widening addition using a dot_product against a vector of ones.
         {VectorReduce::Add, 2, u16(wild_u8x_), "horizontal_widening_add", {}, Pattern::SingleArg},
         {VectorReduce::Add, 2, i16(wild_u8x_), "horizontal_widening_add", {}, Pattern::SingleArg},
         {VectorReduce::Add, 2, i16(wild_i8x_), "horizontal_widening_add", {}, Pattern::SingleArg},
+        {VectorReduce::Add, 2, i32(wild_i16x_), "horizontal_widening_add", {}, Pattern::SingleArg},
 
         // Sum of absolute differences
         {VectorReduce::Add, 8, u64(absd(wild_u8x_, wild_u8x_)), "sum_of_absolute_differences", {}},

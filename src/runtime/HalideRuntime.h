@@ -75,6 +75,32 @@ extern "C" {
 #endif
 #endif
 
+#ifndef COMPILING_HALIDE_RUNTIME
+
+// clang had _Float16 added as a reserved name in clang 8, but
+// doesn't actually support it on most platforms until clang 15.
+// Ideally there would be a better way to detect if the type
+// is supported, even in a compiler independent fashion, but
+// coming up with one has proven elusive.
+#if defined(__clang__) && (__clang_major__ >= 16) && !defined(__EMSCRIPTEN__)
+#if defined(__is_identifier)
+#if !__is_identifier(_Float16)
+#define HALIDE_CPP_COMPILER_HAS_FLOAT16
+#endif
+#endif
+#endif
+
+// Similarly, detecting _Float16 for gcc is problematic.
+// For now, we say that if >= v12, and compiling on x86 or arm,
+// we assume support. This may need revision.
+#if defined(__GNUC__) && (__GNUC__ >= 12)
+#if defined(__x86_64__) || defined(__i386__) || defined(__arm__) || defined(__aarch64__)
+#define HALIDE_CPP_COMPILER_HAS_FLOAT16
+#endif
+#endif
+
+#endif  // !COMPILING_HALIDE_RUNTIME
+
 /** \file
  *
  * This file declares the routines used by Halide internally in its
@@ -1091,8 +1117,11 @@ enum halide_error_code_t {
      * violates a Halide invariant. */
     halide_error_code_no_device_interface = -19,
 
-    /* unused = -20, */
-    /* unused = -21, */
+    /** This part of the Halide runtime is unimplemented on this platform. */
+    halide_error_code_unimplemented = -20,
+
+    /** A runtime symbol could not be loaded. */
+    halide_error_code_symbol_not_found = -21,
 
     /** There is a bug in the Halide compiler. */
     halide_error_code_internal_error = -22,
@@ -1122,9 +1151,11 @@ enum halide_error_code_t {
     /** At least one of the buffer's extents are negative. */
     halide_error_code_buffer_extents_negative = -28,
 
-    halide_error_code_unused_29 = -29,
+    /** Call(s) to a GPU backend API failed. */
+    halide_error_code_gpu_device_error = -29,
 
-    halide_error_code_unused_30 = -30,
+    /** Failure recording trace packets for one of the halide_target_feature_trace features. */
+    halide_error_code_trace_failed = -30,
 
     /** A specialize_fail() schedule branch was selected at runtime. */
     halide_error_code_specialize_fail = -31,
@@ -1330,7 +1361,6 @@ typedef enum halide_target_feature_t {
     halide_target_feature_avx512_skylake,         ///< Enable the AVX512 features supported by Skylake Xeon server processors. This adds AVX512-VL, AVX512-BW, and AVX512-DQ to the base set. The main difference from the base AVX512 set is better support for small integer ops. Note that this does not include the Knight's Landing features. Note also that these features are not available on Skylake desktop and mobile processors.
     halide_target_feature_avx512_cannonlake,      ///< Enable the AVX512 features expected to be supported by future Cannonlake processors. This includes all of the Skylake features, plus AVX512-IFMA and AVX512-VBMI.
     halide_target_feature_avx512_sapphirerapids,  ///< Enable the AVX512 features supported by Sapphire Rapids processors. This include all of the Cannonlake features, plus AVX512-VNNI and AVX512-BF16.
-    halide_target_feature_hvx_use_shared_object,  ///< Deprecated
     halide_target_feature_trace_loads,            ///< Trace all loads done by the pipeline. Equivalent to calling Func::trace_loads on every non-inlined Func.
     halide_target_feature_trace_stores,           ///< Trace all stores done by the pipeline. Equivalent to calling Func::trace_stores on every non-inlined Func.
     halide_target_feature_trace_realizations,     ///< Trace all realizations done by the pipeline. Equivalent to calling Func::trace_realizations on every non-inlined Func.
@@ -1351,6 +1381,7 @@ typedef enum halide_target_feature_t {
     halide_target_feature_wasm_sat_float_to_int,  ///< Enable saturating (nontrapping) float-to-int instructions for WebAssembly codegen.
     halide_target_feature_wasm_threads,           ///< Enable use of threads in WebAssembly codegen. Requires the use of a wasm runtime that provides pthread-compatible wrappers (typically, Emscripten with the -pthreads flag). Unsupported under WASI.
     halide_target_feature_wasm_bulk_memory,       ///< Enable +bulk-memory instructions for WebAssembly codegen.
+    halide_target_feature_webgpu,                 ///< Enable the WebGPU runtime.
     halide_target_feature_sve,                    ///< Enable ARM Scalable Vector Extensions
     halide_target_feature_sve2,                   ///< Enable ARM Scalable Vector Extensions v2
     halide_target_feature_egl,                    ///< Force use of EGL support.
@@ -1362,6 +1393,7 @@ typedef enum halide_target_feature_t {
     halide_target_feature_sanitizer_coverage,     ///< Enable hooks for SanitizerCoverage support.
     halide_target_feature_profile_by_timer,       ///< Alternative to halide_target_feature_profile using timer interrupt for systems without threads or applicartions that need to avoid them.
     halide_target_feature_spirv,                  ///< Enable SPIR-V code generation support.
+    halide_target_feature_semihosting,            ///< Used together with Target::NoOS for the baremetal target built with semihosting library and run with semihosting mode where minimum I/O communication with a host PC is available.
     halide_target_feature_end                     ///< A sentinel. Every target is considered to have this feature, and setting this feature does nothing.
 } halide_target_feature_t;
 
@@ -1735,7 +1767,7 @@ void halide_register_argv_and_metadata(
  * alongside the pipeline. */
 
 /** Per-Func state tracked by the sampling profiler. */
-struct halide_profiler_func_stats {
+struct HALIDE_ATTRIBUTE_ALIGN(8) halide_profiler_func_stats {
     /** Total time taken evaluating this Func (in nanoseconds). */
     uint64_t time;
 
@@ -1763,7 +1795,7 @@ struct halide_profiler_func_stats {
 
 /** Per-pipeline state tracked by the sampling profiler. These exist
  * in a linked list. */
-struct halide_profiler_pipeline_stats {
+struct HALIDE_ATTRIBUTE_ALIGN(8) halide_profiler_pipeline_stats {
     /** Total time spent inside this pipeline (in nanoseconds) */
     uint64_t time;
 
@@ -1937,7 +1969,12 @@ extern double halide_float16_bits_to_double(uint16_t);
  *
  * If set to false, releases all unused device allocations back to the
  * underlying device APIs. For finer-grained control, see specific
- * methods in each device api runtime. */
+ * methods in each device api runtime.
+ *
+ * Note that if the flag is set to true, this call *must* succeed and return
+ * a value of halide_error_code_success (i.e., zero); if you replace
+ * the implementation of this call in the runtime, you must honor this contract.
+ * */
 extern int halide_reuse_device_allocations(void *user_context, bool);
 
 /** Determines whether on device_free the memory is returned
@@ -1988,6 +2025,13 @@ HALIDE_ALWAYS_INLINE constexpr halide_type_t halide_type_of() {
     static_assert(check_is_pointer<T>::value, "Expected a pointer type here");
     return halide_type_t(halide_type_handle, 64);
 }
+
+#ifdef HALIDE_CPP_COMPILER_HAS_FLOAT16
+template<>
+HALIDE_ALWAYS_INLINE constexpr halide_type_t halide_type_of<_Float16>() {
+    return halide_type_t(halide_type_float, 16);
+}
+#endif
 
 template<>
 HALIDE_ALWAYS_INLINE constexpr halide_type_t halide_type_of<float>() {
