@@ -68,6 +68,48 @@ const std::string feature_names[] = {
 };
 const std::string type_names[] = {"Bool", "UInt8", "UInt16", "UInt32", "UInt64", "Float", "Double"};
 
+const std::string schedule_feature_names[] = {
+"num_realizations",
+"num_productions",
+"points_computed_per_realization",
+"points_computed_per_production",
+"points_computed_total",
+"points_computed_minimum",
+"innermost_loop_extent",
+"innermost_pure_loop_extent",
+"unrolled_loop_extent",
+"inner_parallelism",
+"outer_parallelism",
+"bytes_at_realization",
+"bytes_at_production",
+"bytes_at_root",
+"innermost_bytes_at_realization",
+"innermost_bytes_at_production",
+"innermost_bytes_at_root",
+"inlined_calls",
+"unique_bytes_read_per_realization",
+"unique_lines_read_per_realization",
+"allocation_bytes_read_per_realization",
+"working_set",
+"vector_size",
+"native_vector_size",
+"num_vectors",
+"num_scalars",
+"scalar_loads_per_vector",
+"vector_loads_per_vector",
+"scalar_loads_per_scalar",
+"bytes_at_task",
+"innermost_bytes_at_task",
+"unique_bytes_read_per_vector",
+"unique_lines_read_per_vector",
+"unique_bytes_read_per_task",
+"unique_lines_read_per_task",
+"working_set_at_task",
+"working_set_at_production",
+"working_set_at_realization",
+"working_set_at_root"
+};
+
 struct Sample {
     vector<float> runtimes;  // in msec
     double prediction[kModels];
@@ -346,6 +388,15 @@ float compute_variance(const std::vector<float>& numbers) {
     return variance;
 }
 
+float compute_mean(const std::vector<float>& numbers) {
+    float sum = 0.0f;
+    int count = numbers.size();
+    for (size_t i = 0; i < numbers.size(); ++i) {
+        sum += numbers[i];
+    }
+    return sum / count;
+}
+
 int main(int argc, char **argv) {
     auto samples = load_samples();
     // 40 * 7 -> 280
@@ -363,10 +414,26 @@ int main(int argc, char **argv) {
     for (int y = 0; y < head1_h; y++) {
         std::cout << "Type " << type_names[y] << ":\n";
         for (int x = 0; x < head1_w; x++) {
-            float variance = compute_variance(pipeline_features_accum[x * head1_h + y]);
-            std::cout << "Variance of " << feature_names[x] << ": " << variance << "\n";
+            float mean = compute_mean(pipeline_features_accum[x * head1_h + y]);
+            std::cout << "Mean of " << feature_names[x] << ": " << mean << "\n";
         }
         std::cout << "\n";
+    }
+    std::vector<std::vector<float>> schedule_features_accum(head2_w);
+    for (const auto& pipe: samples) {
+        size_t num_stages = pipe.second.num_stages;
+        for (const auto & sched: pipe.second.schedules) {
+            for (size_t i = 0; i < num_stages; i++) {
+                for (int x = 0; x < head2_w; x++) {
+                    schedule_features_accum[x].push_back(sched.second.schedule_features(x, i));
+                }
+            }
+        }
+
+    }
+    for (int x = 0; x < head2_w; x++) {
+        float mean = compute_mean(schedule_features_accum[x]);
+        std::cout << "Mean of " << schedule_feature_names[x] << ": " << mean << "\n";
     }
     return 0;
 }

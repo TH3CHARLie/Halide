@@ -65,6 +65,8 @@ public:
     // Save/Load the model weights to/from disk.
     void save_weights();
     void load_weights();
+
+    void save_to_weights_file(const std::string &weights_file_path);
 };
 
 std::unique_ptr<DefaultCostModel> make_default_cost_model(const std::string &weights_in_dir = "",

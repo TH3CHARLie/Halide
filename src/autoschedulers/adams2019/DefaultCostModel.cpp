@@ -374,6 +374,14 @@ void DefaultCostModel::save_weights() {
     }
 }
 
+void DefaultCostModel::save_to_weights_file(const std::string &weights_file_path) {
+    internal_assert(!weights_file_path.empty())
+        << "Unable to save weights: no output path specified\n";
+
+    internal_assert(weights.save_to_file(weights_file_path))
+        << "Unable to save weights to file: " << weights_file_path << "\n";
+}
+
 // Discard any enqueued but unevaluated schedules
 void DefaultCostModel::reset() {
     cursor = 0;
