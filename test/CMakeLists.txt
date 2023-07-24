@@ -105,3 +105,5 @@ if (WITH_TEST_FUZZ)
 else ()
     message(STATUS "Building fuzz tests disabled")
 endif ()
+
+add_subdirectory(schedule_fuzz)
