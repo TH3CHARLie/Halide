@@ -3,6 +3,7 @@
 #include <fuzzer/FuzzedDataProvider.h>
 #include <iostream>
 #include <unordered_set>
+#include <functional>
 
 using namespace Halide;
 
@@ -18,18 +19,22 @@ enum class ScheduleOption {
 // 2. generate new vars (not necessarily from vars)
 // 3. generate extended vars from existing vars
 Var generate_random_var(FuzzedDataProvider &fdp, std::vector<Var> &vars) {
-    int choice = fdp.ConsumeIntegralInRange<int>(0, 2);
-    if (choice == 0) {
-        int index = fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1);
-        return vars[index];
-    } else if (choice == 1) {
-        int index = fdp.ConsumeIntegralInRange<int>(0, 25);
-        return Var(std::string(1, 'a' + index));
-    } else {
-        int index = fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1);
-        int next_index = fdp.ConsumeIntegralInRange<int>(0, 100);
-        return Var(vars[index].name() + "_i_" + std::to_string(next_index));
-    }
+    std::function<Var()> operations[] = {
+        [&]() {
+            int index = fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1);
+            return vars[index];
+        },
+        [&]() {
+            int index = fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1);
+            int next_index = fdp.ConsumeIntegralInRange<int>(0, 100);
+            return Var(vars[index].name() + "_i_" + std::to_string(next_index));
+        },
+        [&]() {
+            int index = fdp.ConsumeIntegralInRange<int>(0, 25);
+            return Var(std::string(1, 'a' + index));
+        }
+    };
+    return fdp.PickValueInArray(operations)();
 }
 
 void merge_vars(std::vector<Var> &vars, const std::vector<Var> &new_vars) {
@@ -47,33 +52,33 @@ void merge_vars(std::vector<Var> &vars, const std::vector<Var> &new_vars) {
 static const int factors[] = {1, 2, 3, 4, 6, 8, 16, 32, 64, 128};
 
 void generate_random_schedule(FuzzedDataProvider &fdp, Internal::Function &function, std::vector<Var> &vars) {
-    // depth here means how many schedules we are applying to the function
-    int depth = fdp.ConsumeIntegralInRange<int>(0, 5);
-    std::cout << "schedule for function " << function.name() << " depth " << depth << ": " << function.name();
-    for (int i = 0; i < depth; ++i) {
-        ScheduleOption option = fdp.PickValueInArray<ScheduleOption>({ScheduleOption::ComputeRoot, ScheduleOption::Split, ScheduleOption::Vectorize, ScheduleOption::Unroll, ScheduleOption::Reorder});
-        if (option == ScheduleOption::ComputeRoot) {
+    std::function<void()> operations[] = {
+        [&]() {
             Func(function).compute_root();
             std::cout << ".compute_root()";
-        } else if (option == ScheduleOption::Split) {
+        },
+        [&]() {
             Var old = generate_random_var(fdp, vars);
             Var outer = generate_random_var(fdp, vars);
             Var inner = generate_random_var(fdp, vars);
             merge_vars(vars, {old, outer, inner});
-            int factor = fdp.PickValueInArray<int>(factors);
+            int factor = fdp.PickValueInArray(factors);
             Func(function).split(old, outer, inner, factor);
             std::cout << ".split(" << old.name() << ", " << outer.name() << ", " << inner.name() << ", " << factor << ")";
-        } else if (option == ScheduleOption::Vectorize) {
+        },
+        [&]() {
             Var var = generate_random_var(fdp, vars);
             merge_vars(vars, {var});
             Func(function).vectorize(var);
-            std::cout << ".vectorize( " << var.name() << ")";
-        } else if (option == ScheduleOption::Unroll) {
+            std::cout << ".vectorize(" << var.name() << ")";
+        },
+        [&]() {
             Var var = generate_random_var(fdp, vars);
             merge_vars(vars, {var});
             Func(function).unroll(var);
             std::cout << ".unroll(" << var.name() << ")";
-        } else if (option == ScheduleOption::Reorder) {
+        },
+        [&]() {
             int size = fdp.ConsumeIntegralInRange<int>(1, vars.size() - 1);
             std::vector<VarOrRVar> reorder_vars;
             for (int i = 0; i < size; ++i) {
@@ -90,6 +95,12 @@ void generate_random_schedule(FuzzedDataProvider &fdp, Internal::Function &funct
             }
             std::cout << ")";
         }
+    };
+    // depth here means how many schedules we are applying to the function
+    int depth = fdp.ConsumeIntegralInRange<int>(1, 5);
+    std::cout << "schedule for function " << function.name() << " depth " << depth << ": " << function.name();
+    for (int i = 0; i < depth; ++i) {
+        fdp.PickValueInArray(operations)();
     }
     std::cout << "\n";
 }
