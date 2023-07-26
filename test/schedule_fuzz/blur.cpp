@@ -4,6 +4,7 @@
 #include <iostream>
 #include <unordered_set>
 #include <functional>
+#include <exception>
 
 using namespace Halide;
 
@@ -124,6 +125,10 @@ Pipeline mutate_schedule(FuzzedDataProvider &fdp, const Pipeline &p, const std::
 static int counter = 0;
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+    if (!Halide::exceptions_enabled()) {
+        std::cout << "[SKIP] Halide was compiled without exceptions.\n";
+        return 0;
+    }
     ImageParam input(Int(32), 2);
     Func blur_x("blur_x");
     Func blur_y("blur_y");
@@ -132,9 +137,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     blur_y(x, y) = (blur_x(x, y) + blur_x(x, y + 1) + blur_x(x, y + 2)) / 3;
     Pipeline p({blur_y});
     FuzzedDataProvider fdp(data, size);
-    Pipeline mutate_p = mutate_schedule(fdp, p, {x, y});
-    std::string ll_file = "blur.ll";
-    p.compile_to_llvm_assembly(ll_file, {input}, "blur", get_host_target());
+    try {
+        Pipeline mutate_p = mutate_schedule(fdp, p, {x, y});
+        std::string ll_file = "blur" + std::to_string(counter) + ".ll";
+        p.compile_to_module({input}, "blur", get_host_target());
+    } catch (const Halide::CompileError &e) {
+        std::cout << "\nexception: " << e.what() << "\n";
+    }
     std::cout << "counter: " << counter++ << "\n";
     return 0;
 }
