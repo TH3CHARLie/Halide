@@ -8,14 +8,6 @@
 
 using namespace Halide;
 
-enum class ScheduleOption {
-    ComputeRoot,
-    Split,
-    Vectorize,
-    Unroll,
-    Reorder,
-};
-
 // 1. reuse existing vars
 // 2. generate new vars (not necessarily from vars)
 // 3. generate extended vars from existing vars
@@ -129,21 +121,26 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         std::cout << "[SKIP] Halide was compiled without exceptions.\n";
         return 0;
     }
-    ImageParam input(Int(32), 2);
+    Func input("input");
     Func blur_x("blur_x");
     Func blur_y("blur_y");
     Var x("x"), y("y");
-    blur_x(x, y) = (input(x, y) + input(x + 1, y) + input(x + 2, y)) / 3;
-    blur_y(x, y) = (blur_x(x, y) + blur_x(x, y + 1) + blur_x(x, y + 2)) / 3;
+    input(x, y) = x + y;
+    blur_x(x, y) = (input(x - 1, y) + input(x, y) + input(x + 1, y)) / 3;
+    blur_y(x, y) = (blur_x(x, y - 1) + blur_x(x, y) + blur_x(x, y + 1)) / 3;
     Pipeline p({blur_y});
     FuzzedDataProvider fdp(data, size);
     try {
         Pipeline mutate_p = mutate_schedule(fdp, p, {x, y});
         std::string ll_file = "blur" + std::to_string(counter) + ".ll";
-        p.compile_to_module({input}, "blur", get_host_target());
+        p.compile_to_module({}, "blur", get_host_target());
+        std::map<std::string, Internal::Parameter> params;
+        std::string hlpipe_file = "serdes_res/blur_" + std::to_string(counter) + ".hlpipe";
+        serialize_pipeline(mutate_p, hlpipe_file, params);
     } catch (const Halide::CompileError &e) {
         std::cout << "\nexception: " << e.what() << "\n";
     }
-    std::cout << "counter: " << counter++ << "\n";
+    std::cout << "counter: " << counter << "\n";
+    counter++;
     return 0;
 }

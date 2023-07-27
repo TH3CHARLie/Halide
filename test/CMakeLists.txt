@@ -102,6 +102,7 @@ cmake_dependent_option(
 if (WITH_TEST_FUZZ)
     message(STATUS "Building fuzz tests enabled")
     add_subdirectory(fuzz)
+    add_subdirectory(schedule_fuzz)
 else ()
     message(STATUS "Building fuzz tests disabled")
 endif ()
@@ -118,4 +119,4 @@ else ()
     message(STATUS "Building serialization tests disabled")
 endif ()
 
-add_subdirectory(schedule_fuzz)
+add_subdirectory(fuzz_driver)
