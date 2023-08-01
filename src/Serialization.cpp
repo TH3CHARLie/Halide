@@ -128,6 +128,13 @@ private:
     void build_function_mappings(const std::map<std::string, Function> &env);
 };
 
+std::string remove_counter_from_function_name(const std::string &name) {
+    if (name.find('$') != std::string::npos) {
+        return name.substr(0, name.find('$'));
+    }
+    return name;
+}
+
 Serialize::MemoryType Serializer::serialize_memory_type(const MemoryType &memory_type) {
     switch (memory_type) {
     case MemoryType::Auto:
@@ -369,7 +376,7 @@ Serialize::ExternFuncArgumentType Serializer::serialize_extern_func_argument_typ
 }
 
 Offset<String> Serializer::serialize_string(FlatBufferBuilder &builder, const std::string &str) {
-    return builder.CreateString(str);
+    return builder.CreateString(remove_counter_from_function_name(str));
 }
 
 Offset<Serialize::Type> Serializer::serialize_type(FlatBufferBuilder &builder, const Type &type) {
