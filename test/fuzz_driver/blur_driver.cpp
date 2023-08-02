@@ -20,9 +20,7 @@ int main(int argc, char **argv) {
     Pipeline p({blur_y});
     Buffer<int> buf = p.realize({width, height});
     Pipeline dp = deserialize_pipeline(filename, {});
-    std::cout << "Deserialized pipeline\n";
     Buffer<int> buf2 = dp.realize({width, height});
-    std::cout << "Realized deserialized pipeline\n";
 
     // compare buffer values
     for (int i = 0; i < height; ++i) {
