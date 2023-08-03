@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <functional>
 #include <exception>
+#include <fstream>
 
 using namespace Halide;
 
@@ -75,7 +76,7 @@ std::string tail_strategy_to_string(TailStrategy tail_strategy) {
     }
 }
 
-void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &function, const std::vector<Func> &before_funcs, const std::vector<Func> &after_funcs) {
+void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &function, const std::vector<Func> &before_funcs, const std::vector<Func> &after_funcs, std::ostream &out) {
     // TODO: do we really need to implement tile here since it's combining split and reorder?
     // available choices: split reorder fuse unroll vectorize parallel serial
     // we only call each primitive once
@@ -95,7 +96,7 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
             int split_factor = fdp.PickValueInArray(common_split_factors);
             TailStrategy tail_strategy = fdp.PickValueInArray(tail_strategies);
-            std::cout << ".split(" << var_name_picked << ", " << var_name_picked << "_outer, " << var_name_picked << "_inner, " << split_factor << ", " << tail_strategy_to_string(tail_strategy) << ")";
+            out << ".split(" << var_name_picked << ", " << var_name_picked << "_outer, " << var_name_picked << "_inner, " << split_factor << ", " << tail_strategy_to_string(tail_strategy) << ")";
             Func(function).split(Var(var_name_picked), Var(var_name_picked + "_outer"), Var(var_name_picked + "_inner"), split_factor, tail_strategy);
             set_split = true;
         },
@@ -118,14 +119,14 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
                     reorder_vars.push_back(Var(var_name_picked));
                 }
             }
-            std::cout << ".reorder(";
+            out << ".reorder(";
             for (int i = 0; i < reorder_vars.size(); ++i) {
-                std::cout << reorder_vars[i].name();
+                out << reorder_vars[i].name();
                 if (i != reorder_vars.size() - 1) {
-                    std::cout << ", ";
+                    out << ", ";
                 }
             }
-            std::cout << ")";
+            out << ")";
             Func(function).reorder(reorder_vars);
             set_reorder = true;
         },
@@ -140,7 +141,7 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
                 outer_var_name = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
             }
             std::string fused_var_name = inner_var_name + "_" + outer_var_name + "_fused";
-            std::cout << ".fuse(" << inner_var_name << ", " << outer_var_name << ", " << fused_var_name << ")";
+            out << ".fuse(" << inner_var_name << ", " << outer_var_name << ", " << fused_var_name << ")";
             Func(function).fuse(Var(inner_var_name), Var(outer_var_name), Var(fused_var_name));
             set_fuse = true;
         },
@@ -150,7 +151,7 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             }
             std::vector<std::string> var_names = get_function_var_names(function);
             std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
-            std::cout << ".unroll(" << var_name_picked << ")";
+            out << ".unroll(" << var_name_picked << ")";
             Func(function).unroll(Var(var_name_picked));
             set_unroll = true;
         },
@@ -160,7 +161,7 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             }
             std::vector<std::string> var_names = get_function_var_names(function);
             std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
-            std::cout << ".vectorize(" << var_name_picked << ")";
+            out << ".vectorize(" << var_name_picked << ")";
             Func(function).vectorize(Var(var_name_picked));
             set_vectorize = true;
         },
@@ -170,7 +171,7 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             }
             std::vector<std::string> var_names = get_function_var_names(function);
             std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
-            std::cout << ".parallel(" << var_name_picked << ")";
+            out << ".parallel(" << var_name_picked << ")";
             Func(function).parallel(Var(var_name_picked));
             set_parallel = true;
         },
@@ -180,7 +181,7 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             }
             std::vector<std::string> var_names = get_function_var_names(function);
             std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
-            std::cout << ".serial(" << var_name_picked << ")";
+            out << ".serial(" << var_name_picked << ")";
             Func(function).serial(Var(var_name_picked));
             set_serial = true;
         }
@@ -191,26 +192,17 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
     }
 }
 
-void generate_compute_schedule(FuzzedDataProvider &fdp, Internal::Function &function, const std::vector<Func> &before_funcs, const std::vector<Func> &after_funcs) {
+void generate_compute_schedule(FuzzedDataProvider &fdp, Internal::Function &function, const std::vector<Func> &before_funcs, const std::vector<Func> &after_funcs, std::ostream &out) {
     bool set_compute_root = false;
-    bool set_compute_inline = false;
     bool set_compute_at = false;
     std::function<void()> operations[] = {
         [&]() {
             if (set_compute_root) {
                 return;
             }
-            std::cout << ".compute_root()";
+            out << ".compute_root()";
             Func(function).compute_root();
             set_compute_root = true;
-        },
-        [&]() {
-            if (set_compute_inline) {
-                return;
-            }
-            std::cout << ".compute_inline()";
-            Func(function).compute_inline();
-            set_compute_inline = true;
         },
         [&]() {
             if (set_compute_at || before_funcs.empty()) {
@@ -219,7 +211,7 @@ void generate_compute_schedule(FuzzedDataProvider &fdp, Internal::Function &func
             Func compute_at_func = before_funcs[fdp.ConsumeIntegralInRange<int>(0, before_funcs.size() - 1)];
             auto compute_at_func_var_names = get_function_var_names(compute_at_func.function());
             std::string var_name_picked = compute_at_func_var_names[fdp.ConsumeIntegralInRange<int>(0, compute_at_func_var_names.size() - 1)];
-            std::cout << ".compute_at(" << compute_at_func.name() << ", " << var_name_picked << ")";
+            out << ".compute_at(" << compute_at_func.name() << ", " << var_name_picked << ")";
             Func(function).compute_at(compute_at_func, Var(var_name_picked));
             set_compute_at = true;
         }
@@ -227,7 +219,7 @@ void generate_compute_schedule(FuzzedDataProvider &fdp, Internal::Function &func
     fdp.PickValueInArray(operations)();
 }
 
-void generate_store_schedule(FuzzedDataProvider &fdp, Internal::Function &function, const std::vector<Func> &before_funcs, const std::vector<Func> &after_funcs) {
+void generate_store_schedule(FuzzedDataProvider &fdp, Internal::Function &function, const std::vector<Func> &before_funcs, const std::vector<Func> &after_funcs, std::ostream &out) {
     bool set_store_root = false;
     bool set_store_at = false;
     std::function<void()> operations[] = {
@@ -235,7 +227,7 @@ void generate_store_schedule(FuzzedDataProvider &fdp, Internal::Function &functi
             if (set_store_root) {
                 return;
             }
-            std::cout << ".store_root()";
+            out << ".store_root()";
             Func(function).store_root();
             set_store_root = true;
         },
@@ -246,7 +238,7 @@ void generate_store_schedule(FuzzedDataProvider &fdp, Internal::Function &functi
             Func store_at_func = after_funcs[fdp.ConsumeIntegralInRange<int>(0, after_funcs.size() - 1)];
             auto store_at_func_var_names = get_function_var_names(store_at_func.function());
             std::string var_name_picked = store_at_func_var_names[fdp.ConsumeIntegralInRange<int>(0, store_at_func_var_names.size() - 1)];
-            std::cout << ".store_at(" << store_at_func.name() << ", " << var_name_picked << ")";
+            out << ".store_at(" << store_at_func.name() << ", " << var_name_picked << ")";
             Func(function).store_at(store_at_func, Var(var_name_picked));
             set_store_at = true;
         }
@@ -254,9 +246,9 @@ void generate_store_schedule(FuzzedDataProvider &fdp, Internal::Function &functi
     fdp.PickValueInArray(operations)();
 }
 
-void generate_function_schedule(FuzzedDataProvider &fdp, std::map<std::string, Internal::Function> &env, const std::vector<std::string> &order, int index) {
+void generate_function_schedule(FuzzedDataProvider &fdp, std::map<std::string, Internal::Function> &env, const std::vector<std::string> &order, int index, std::ostream &out) {
     Internal::Function &function = env[order[index]];
-    std::cout << "planned schedule for function " << function.name();
+    out << "planned schedule for function " << function.name();
     // assemble the Funcs before the current Func
     std::vector<Func> before_funcs;
     for (int i = 0; i < index; ++i) {
@@ -271,21 +263,21 @@ void generate_function_schedule(FuzzedDataProvider &fdp, std::map<std::string, I
     // Following Alex Reinking's work on Halide formal semantics
     // TODO: generate a condition stmt so we can use f.specialize(cond)
     if (fdp.ConsumeBool()) {
-        generate_loop_schedule(fdp, function, before_funcs, after_funcs);
+        generate_loop_schedule(fdp, function, before_funcs, after_funcs, out);
     }
     if (fdp.ConsumeBool()) {
-        generate_compute_schedule(fdp, function, before_funcs, after_funcs);
+        generate_compute_schedule(fdp, function, before_funcs, after_funcs, out);
     }
     if (fdp.ConsumeBool()) {
-        generate_store_schedule(fdp, function, before_funcs, after_funcs);
+        generate_store_schedule(fdp, function, before_funcs, after_funcs, out);
     }
 
     // depth here means how many schedules we are applying to the function
 
-    std::cout << "\n";
+    out << "\n";
 }
 
-void generate_schedule(FuzzedDataProvider &fdp, Pipeline &p) {
+void generate_schedule(FuzzedDataProvider &fdp, Pipeline &p, std::ostream& out) {
     std::vector<Internal::Function> outputs;
     for (const auto &f : p.outputs()) {
         outputs.push_back(f.function());
@@ -295,7 +287,7 @@ void generate_schedule(FuzzedDataProvider &fdp, Pipeline &p) {
     std::vector<std::string> order = topological_order(outputs, env);
     // TODO: assume no update stage
     for (int i = order.size() - 1; i >= 0; --i) {
-        generate_function_schedule(fdp, env, order, i);
+        generate_function_schedule(fdp, env, order, i, out);
     }
 }
 
@@ -306,6 +298,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         std::cout << "[SKIP] Halide was compiled without exceptions.\n";
         return 0;
     }
+    std::ofstream out("fuzz_res/blur_" + std::to_string(counter) + ".txt");
     Func input("input");
     Func blur_x("blur_x");
     Func blur_y("blur_y");
@@ -316,14 +309,13 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     Pipeline p({blur_y});
     FuzzedDataProvider fdp(data, size);
     try {
-        generate_schedule(fdp, p);
+        generate_schedule(fdp, p, out);
         p.compile_to_module({}, "blur", get_host_target());
         std::map<std::string, Internal::Parameter> params;
-        std::string hlpipe_file = "serdes_res/blur_" + std::to_string(counter) + ".hlpipe";
-        std::cout << "serialize pipeline with output size " << p.outputs().size() << "\n";
+        std::string hlpipe_file = "fuzz_res/blur_" + std::to_string(counter) + ".hlpipe";
         serialize_pipeline(p, hlpipe_file, params);
     } catch (const Halide::CompileError &e) {
-        std::cout << "\nexception: " << e.what() << "\n";
+        out << "\nexception: " << e.what() << "\n";
     }
     counter++;
     return 0;
