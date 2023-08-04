@@ -59,7 +59,7 @@ std::vector<std::string> get_function_var_names(const Internal::Function &functi
 }
 
 int common_split_factors[] = {1, 2, 4, 8, 16, 32, 64, 128};
-TailStrategy tail_strategies[] = {TailStrategy::RoundUp, TailStrategy::GuardWithIf, TailStrategy::ShiftInwards, TailStrategy::Auto};
+TailStrategy tail_strategies[] = {TailStrategy::RoundUp, TailStrategy::GuardWithIf, TailStrategy::Predicate, TailStrategy::PredicateLoads, TailStrategy::PredicateStores, TailStrategy::ShiftInwards, TailStrategy::Auto};
 
 std::string tail_strategy_to_string(TailStrategy tail_strategy) {
     switch (tail_strategy) {
@@ -67,6 +67,12 @@ std::string tail_strategy_to_string(TailStrategy tail_strategy) {
             return "TailStrategy::RoundUp";
         case TailStrategy::GuardWithIf:
             return "TailStrategy::GuardWithIf";
+        case TailStrategy::Predicate:
+            return "TailStrategy::Predicate";
+        case TailStrategy::PredicateLoads:
+            return "TailStrategy::PredicateLoads";
+        case TailStrategy::PredicateStores:
+            return "TailStrategy::PredicateStores";
         case TailStrategy::ShiftInwards:
             return "TailStrategy::ShiftInwards";
         case TailStrategy::Auto:
@@ -77,7 +83,6 @@ std::string tail_strategy_to_string(TailStrategy tail_strategy) {
 }
 
 void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &function, const std::vector<Func> &before_funcs, const std::vector<Func> &after_funcs, std::ostream &out) {
-    // TODO: do we really need to implement tile here since it's combining split and reorder?
     // available choices: split reorder fuse unroll vectorize parallel serial
     // we only call each primitive once
     bool set_split = false;
