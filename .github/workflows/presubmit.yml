@@ -33,12 +33,6 @@ jobs:
       - uses: actions/checkout@v3
       - name: Install clang-tidy
         run: |
-          # from apt.llvm.org
-          # wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add -
-          sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 15CF4D18AF4F7421
-          sudo apt-add-repository "deb https://apt.llvm.org/$(lsb_release -sc)/ llvm-toolchain-$(lsb_release -sc)-16 main"
-          sudo apt-get update
-          sudo apt-get install llvm-16 clang-16 liblld-16-dev libclang-16-dev clang-tidy-16 ninja-build flatbuffers-compiler flatbuffers-compiler-dev libflatbuffers-dev libflatbuffers1
           brew update
           brew install llvm@16 ninja coreutils
       - name: Run clang-tidy
