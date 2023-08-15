@@ -58,7 +58,7 @@ std::vector<std::string> get_function_var_names(const Internal::Function &functi
     return var_names;
 }
 
-int common_split_factors[] = {1, 2, 4, 8, 16, 32, 64, 128};
+int common_split_factors[] = {1, 2, 4, 8, 16, 32};
 TailStrategy tail_strategies[] = {TailStrategy::RoundUp, TailStrategy::GuardWithIf, TailStrategy::Predicate, TailStrategy::PredicateLoads, TailStrategy::PredicateStores, TailStrategy::ShiftInwards, TailStrategy::Auto};
 
 std::string tail_strategy_to_string(TailStrategy tail_strategy) {
@@ -85,34 +85,24 @@ std::string tail_strategy_to_string(TailStrategy tail_strategy) {
 void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &function, const std::vector<Func> &before_funcs, const std::vector<Func> &after_funcs, std::ostream &out) {
     // available choices: split reorder fuse unroll vectorize parallel serial
     // we only call each primitive once
-    bool set_split = false;
-    bool set_reorder = false;
-    bool set_fuse = false;
-    bool set_unroll = false;
-    bool set_vectorize = false;
-    bool set_parallel = false;
-    bool set_serial = false;
     std::function<void()> operations[] = {
         [&]() {
-            if (set_split) {
-                return;
-            }
             std::vector<std::string> var_names = get_function_var_names(function);
             std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
             int split_factor = fdp.PickValueInArray(common_split_factors);
             TailStrategy tail_strategy = fdp.PickValueInArray(tail_strategies);
             out << ".split(" << var_name_picked << ", " << var_name_picked << "_outer, " << var_name_picked << "_inner, " << split_factor << ", " << tail_strategy_to_string(tail_strategy) << ")";
             Func(function).split(Var(var_name_picked), Var(var_name_picked + "_outer"), Var(var_name_picked + "_inner"), split_factor, tail_strategy);
-            set_split = true;
         },
         [&]() {
             if (fdp.remaining_bytes() <= 0) {
                 return;
             }
-            if (set_reorder) {
+            std::vector<std::string> var_names = get_function_var_names(function);
+            // we need at least two vars to reorder
+            if (var_names.size() < 2) {
                 return;
             }
-            std::vector<std::string> var_names = get_function_var_names(function);
             // for reorder we always reorder everything we have in this function
             // but we need a random premutation, fdp is really bad at that, so we do rejection sampling.....
             std::vector<VarOrRVar> reorder_vars;
@@ -133,13 +123,13 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             }
             out << ")";
             Func(function).reorder(reorder_vars);
-            set_reorder = true;
         },
         [&]() {
-            if (set_fuse) {
+            std::vector<std::string> var_names = get_function_var_names(function);
+            // we need at least two vars to fuse
+            if (var_names.size() < 2) {
                 return;
             }
-            std::vector<std::string> var_names = get_function_var_names(function);
             std::string inner_var_name = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
             std::string outer_var_name = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
             while (outer_var_name == inner_var_name && fdp.remaining_bytes() > 0) {
@@ -148,47 +138,30 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             std::string fused_var_name = inner_var_name + "_" + outer_var_name + "_fused";
             out << ".fuse(" << inner_var_name << ", " << outer_var_name << ", " << fused_var_name << ")";
             Func(function).fuse(Var(inner_var_name), Var(outer_var_name), Var(fused_var_name));
-            set_fuse = true;
         },
         [&]() {
-            if (set_unroll) {
-                return;
-            }
             std::vector<std::string> var_names = get_function_var_names(function);
             std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
             out << ".unroll(" << var_name_picked << ")";
             Func(function).unroll(Var(var_name_picked));
-            set_unroll = true;
         },
         [&]() {
-            if (set_vectorize) {
-                return;
-            }
             std::vector<std::string> var_names = get_function_var_names(function);
             std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
             out << ".vectorize(" << var_name_picked << ")";
             Func(function).vectorize(Var(var_name_picked));
-            set_vectorize = true;
         },
         [&]() {
-            if (set_parallel) {
-                return;
-            }
             std::vector<std::string> var_names = get_function_var_names(function);
             std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
             out << ".parallel(" << var_name_picked << ")";
             Func(function).parallel(Var(var_name_picked));
-            set_parallel = true;
         },
         [&]() {
-            if (set_serial) {
-                return;
-            }
             std::vector<std::string> var_names = get_function_var_names(function);
             std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
             out << ".serial(" << var_name_picked << ")";
             Func(function).serial(Var(var_name_picked));
-            set_serial = true;
         }
     };
     int depth = fdp.ConsumeIntegralInRange<int>(0, 5);
@@ -278,7 +251,6 @@ void generate_function_schedule(FuzzedDataProvider &fdp, std::map<std::string, I
     }
 
     // depth here means how many schedules we are applying to the function
-
     out << "\n";
 }
 
@@ -293,17 +265,19 @@ void generate_schedule(FuzzedDataProvider &fdp, Pipeline &p, std::ostream& out) 
     // TODO: assume no update stage
     for (int i = order.size() - 1; i >= 0; --i) {
         generate_function_schedule(fdp, env, order, i, out);
+        out.flush();
     }
 }
 
 static int counter = 0;
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
+    std::string output_dir = Internal::get_env_variable("FUZZER_OUTPUT_DIR");
     if (!Halide::exceptions_enabled()) {
         std::cout << "[SKIP] Halide was compiled without exceptions.\n";
         return 0;
     }
-    std::ofstream out("fuzz_res/blur_" + std::to_string(counter) + ".txt");
+    std::ofstream out(output_dir + "/blur_" + std::to_string(counter) + ".txt");
     Func input("input");
     Func blur_x("blur_x");
     Func blur_y("blur_y");
@@ -315,9 +289,10 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     FuzzedDataProvider fdp(data, size);
     try {
         generate_schedule(fdp, p, out);
+        // compute hash of this schedule, read a global hash object
         p.compile_to_module({}, "blur", get_host_target());
         std::map<std::string, Internal::Parameter> params;
-        std::string hlpipe_file = "fuzz_res/blur_" + std::to_string(counter) + ".hlpipe";
+        std::string hlpipe_file = output_dir + "/blur_" + std::to_string(counter) + ".hlpipe";
         serialize_pipeline(p, hlpipe_file, params);
     } catch (const Halide::CompileError &e) {
         out << "\nexception: " << e.what() << "\n";
