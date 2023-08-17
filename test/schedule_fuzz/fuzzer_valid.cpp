@@ -59,7 +59,7 @@ std::vector<std::string> get_function_var_names(const Internal::Function &functi
 }
 
 int common_split_factors[] = {1, 2, 4, 8};
-TailStrategy tail_strategies[] = {TailStrategy::RoundUp, TailStrategy::GuardWithIf, TailStrategy::Predicate, TailStrategy::PredicateLoads, TailStrategy::PredicateStores, TailStrategy::ShiftInwards, TailStrategy::Auto};
+TailStrategy tail_strategies[] = {TailStrategy::RoundUp, TailStrategy::GuardWithIf, TailStrategy::Predicate, /* temporarily disable TailStrategy::PredicateLoads, */ TailStrategy::PredicateStores, TailStrategy::ShiftInwards, TailStrategy::Auto};
 
 std::string tail_strategy_to_string(TailStrategy tail_strategy) {
     switch (tail_strategy) {
