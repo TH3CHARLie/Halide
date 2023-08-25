@@ -5,6 +5,7 @@ tests(GROUPS correctness_multi_gpu
 
 tests(GROUPS correctness
       SOURCES
+      serialization.cpp
       align_bounds.cpp
       argmax.cpp
       async_device_copy.cpp
