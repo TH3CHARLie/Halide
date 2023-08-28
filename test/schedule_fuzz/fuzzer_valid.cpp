@@ -84,7 +84,8 @@ std::string tail_strategy_to_string(TailStrategy tail_strategy) {
 
 void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &function, const std::vector<Func> &before_funcs, const std::vector<Func> &after_funcs, std::ostream &out) {
     // available choices: split reorder fuse unroll vectorize parallel serial
-    // we only call each primitive once
+    // we only call vectorize once (#7779)
+    bool is_vectorized = false;
     std::function<void()> operations[] = {
         [&]() {
             std::vector<std::string> var_names = get_function_var_names(function);
@@ -146,10 +147,14 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             Func(function).unroll(Var(var_name_picked));
         },
         [&]() {
+            if (is_vectorized) {
+                return;
+            }
             std::vector<std::string> var_names = get_function_var_names(function);
             std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
             out << ".vectorize(" << var_name_picked << ")";
             Func(function).vectorize(Var(var_name_picked));
+            is_vectorized = true;
         },
         [&]() {
             std::vector<std::string> var_names = get_function_var_names(function);
