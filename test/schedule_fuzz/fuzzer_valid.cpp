@@ -58,6 +58,17 @@ std::vector<std::string> get_function_var_names(const Internal::Function &functi
     return var_names;
 }
 
+std::vector<std::string> get_stage_var_names(const Stage &stage) {
+    std::vector<std::string> var_names;
+    const auto &dims = stage.get_schedule().dims();
+    for (const auto &d : dims) {
+        if (d.var != Var::outermost().name()) {
+            var_names.push_back(get_original_var_name(d.var));
+        }
+    }
+    return var_names;
+}
+
 int common_split_factors[] = {1, 2, 4, 8};
 TailStrategy tail_strategies[] = {TailStrategy::RoundUp, TailStrategy::GuardWithIf, TailStrategy::Predicate, /* temporarily disable TailStrategy::PredicateLoads, */ TailStrategy::PredicateStores, TailStrategy::ShiftInwards, TailStrategy::Auto};
 
@@ -82,7 +93,7 @@ std::string tail_strategy_to_string(TailStrategy tail_strategy) {
     }
 }
 
-void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &function, const std::vector<Func> &before_funcs, const std::vector<Func> &after_funcs, std::ostream &out) {
+void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &function, Stage stage, std::ostream &out) {
     // available choices: split reorder fuse unroll vectorize parallel serial
     // we only call vectorize once (#7779)
     bool is_vectorized = false;
@@ -231,7 +242,6 @@ void generate_store_schedule(FuzzedDataProvider &fdp, Internal::Function &functi
 
 void generate_function_schedule(FuzzedDataProvider &fdp, std::map<std::string, Internal::Function> &env, const std::vector<std::string> &order, int index, std::ostream &out) {
     Internal::Function &function = env[order[index]];
-    out << "planned schedule for function " << function.name();
     // assemble the Funcs before the current Func
     std::vector<Func> before_funcs;
     for (int i = 0; i < index; ++i) {
@@ -245,18 +255,32 @@ void generate_function_schedule(FuzzedDataProvider &fdp, std::map<std::string, I
     }
     // Following Alex Reinking's work on Halide formal semantics
     // TODO: generate a condition stmt so we can use f.specialize(cond)
-    if (fdp.ConsumeBool()) {
-        generate_loop_schedule(fdp, function, before_funcs, after_funcs, out);
-    }
-    if (fdp.ConsumeBool()) {
-        generate_compute_schedule(fdp, function, before_funcs, after_funcs, out);
-    }
-    if (fdp.ConsumeBool()) {
-        generate_store_schedule(fdp, function, before_funcs, after_funcs, out);
-    }
 
-    // depth here means how many schedules we are applying to the function
-    out << "\n";
+    // we apply loop schedules per-stage, compute/store schedules per-func
+    bool schedule_loops = false;
+    for (int s = 0; s <= (int)function.updates().size(); s++) {
+        if (s == 0) {
+            out << "planned schedule for function " << function.name();
+            if (fdp.ConsumeBool()) {
+                schedule_loops = true;
+                generate_loop_schedule(fdp, function, Stage(function, function.definition(), 0), out);
+            }
+            if (fdp.ConsumeBool()) {
+                generate_compute_schedule(fdp, function, before_funcs, after_funcs, out);
+            }
+            if (fdp.ConsumeBool()) {
+                generate_store_schedule(fdp, function, before_funcs, after_funcs, out);
+            }
+            out << "\n";
+        } else {
+            out << "\nplanned schedule for function " << function.name() << ".update(" << s - 1 << ")";
+            // if we have schedule the initial defintion of this func, we should always schedule the update defintion.
+            if (schedule_loops) {
+                generate_loop_schedule(fdp, function, Stage(function, function.update(s - 1), s), out);
+            }
+            out << "\n";
+        }
+    }
 }
 
 void generate_schedule(FuzzedDataProvider &fdp, Pipeline &p, std::ostream& out) {
@@ -267,7 +291,6 @@ void generate_schedule(FuzzedDataProvider &fdp, Pipeline &p, std::ostream& out) 
     std::map<std::string, Internal::Function> env = build_environment(outputs);
     // TODO: should we preturb the order?
     std::vector<std::string> order = topological_order(outputs, env);
-    // TODO: assume no update stage
     for (int i = order.size() - 1; i >= 0; --i) {
         generate_function_schedule(fdp, env, order, i, out);
         out.flush();
@@ -284,13 +307,15 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     }
     std::ofstream out(output_dir + "/blur_" + std::to_string(counter) + ".txt");
     Func input("input");
-    Func blur_x("blur_x");
-    Func blur_y("blur_y");
+    Func local_sum("local_sum");
+    Func blurry("blurry");
     Var x("x"), y("y");
-    input(x, y) = x + y;
-    blur_x(x, y) = (input(x - 1, y) + input(x, y) + input(x + 1, y)) / 3;
-    blur_y(x, y) = (blur_x(x, y - 1) + blur_x(x, y) + blur_x(x, y + 1)) / 3;
-    Pipeline p({blur_y});
+    input(x, y) = 2 * x + 5 * y;
+    RDom r(-2, 5, -2, 5);
+    local_sum(x, y) = 0;
+    local_sum(x, y) += input(x + r.x, y + r.y);
+    blurry(x, y) = cast<int32_t>(local_sum(x, y) / 25);
+    Pipeline p({blurry});
     FuzzedDataProvider fdp(data, size);
     try {
         generate_schedule(fdp, p, out);
