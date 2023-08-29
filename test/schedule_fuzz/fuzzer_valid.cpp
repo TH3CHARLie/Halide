@@ -186,97 +186,64 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
     }
 }
 
-void generate_compute_schedule(FuzzedDataProvider &fdp, Internal::Function &function, const std::vector<Func> &before_funcs, const std::vector<Func> &after_funcs, std::ostream &out) {
-    bool set_compute_root = false;
-    bool set_compute_at = false;
+void generate_compute_schedule(FuzzedDataProvider &fdp, Internal::Function &function, const std::vector<Func> &consumers, std::ostream &out) {
+    out << "planned compute schedule for function " << function.name();
     std::function<void()> operations[] = {
         [&]() {
-            if (set_compute_root) {
-                return;
-            }
             out << ".compute_root()";
             Func(function).compute_root();
-            set_compute_root = true;
         },
         [&]() {
-            if (set_compute_at || before_funcs.empty()) {
+            if (consumers.empty()) {
                 return;
             }
-            Func compute_at_func = before_funcs[fdp.ConsumeIntegralInRange<int>(0, before_funcs.size() - 1)];
+            Func compute_at_func = consumers[fdp.ConsumeIntegralInRange<int>(0, consumers.size() - 1)];
             auto compute_at_func_var_names = get_function_var_names(compute_at_func.function());
             std::string var_name_picked = compute_at_func_var_names[fdp.ConsumeIntegralInRange<int>(0, compute_at_func_var_names.size() - 1)];
             out << ".compute_at(" << compute_at_func.name() << ", " << var_name_picked << ")";
             Func(function).compute_at(compute_at_func, Var(var_name_picked));
-            set_compute_at = true;
         }
     };
     fdp.PickValueInArray(operations)();
+    out << "\n";
 }
 
-void generate_store_schedule(FuzzedDataProvider &fdp, Internal::Function &function, const std::vector<Func> &before_funcs, const std::vector<Func> &after_funcs, std::ostream &out) {
-    bool set_store_root = false;
-    bool set_store_at = false;
+void generate_store_schedule(FuzzedDataProvider &fdp, Internal::Function &function, const std::vector<Func> &consumers, std::ostream &out) {
+    out << "planned store schedule for function " << function.name();
     std::function<void()> operations[] = {
         [&]() {
-            if (set_store_root) {
-                return;
-            }
             out << ".store_root()";
             Func(function).store_root();
-            set_store_root = true;
         },
         [&]() {
-            if (set_store_at || after_funcs.empty()) {
+            if (consumers.empty()) {
                 return;
             }
-            Func store_at_func = after_funcs[fdp.ConsumeIntegralInRange<int>(0, after_funcs.size() - 1)];
+            Func store_at_func = consumers[fdp.ConsumeIntegralInRange<int>(0, consumers.size() - 1)];
             auto store_at_func_var_names = get_function_var_names(store_at_func.function());
             std::string var_name_picked = store_at_func_var_names[fdp.ConsumeIntegralInRange<int>(0, store_at_func_var_names.size() - 1)];
             out << ".store_at(" << store_at_func.name() << ", " << var_name_picked << ")";
             Func(function).store_at(store_at_func, Var(var_name_picked));
-            set_store_at = true;
         }
     };
     fdp.PickValueInArray(operations)();
+    out << "\n";
 }
 
-void generate_function_schedule(FuzzedDataProvider &fdp, std::map<std::string, Internal::Function> &env, const std::vector<std::string> &order, int index, std::ostream &out) {
-    Internal::Function &function = env[order[index]];
-    // assemble the Funcs before the current Func
-    std::vector<Func> before_funcs;
-    for (int i = 0; i < index; ++i) {
-        before_funcs.push_back(Func(env[order[i]]));
-    }
-
-    // assemble the Funcs after the current Func
-    std::vector<Func> after_funcs;
-    for (int i = index + 1; i < order.size(); ++i) {
-        after_funcs.push_back(Func(env[order[i]]));
-    }
-    // Following Alex Reinking's work on Halide formal semantics
-    // TODO: generate a condition stmt so we can use f.specialize(cond)
-
-    // we apply loop schedules per-stage, compute/store schedules per-func
-    bool schedule_loops = false;
+void generate_loop_schedule_per_function(FuzzedDataProvider &fdp, Internal::Function &function, std::ostream &out) {
     for (int s = 0; s <= (int)function.updates().size(); s++) {
         if (s == 0) {
-            out << "planned schedule for function " << function.name();
-            if (fdp.ConsumeBool()) {
-                schedule_loops = true;
-                generate_loop_schedule(fdp, function, Stage(function, function.definition(), 0), out);
-            }
-            if (fdp.ConsumeBool()) {
-                generate_compute_schedule(fdp, function, before_funcs, after_funcs, out);
-            }
-            if (fdp.ConsumeBool()) {
-                generate_store_schedule(fdp, function, before_funcs, after_funcs, out);
-            }
+            out << "planned loop schedule for function " << function.name();
+            generate_loop_schedule(fdp, function, Stage(function, function.definition(), 0), out);
             out << "\n";
         } else {
-            out << "\nplanned schedule for function " << function.name() << ".update(" << s - 1 << ")";
-            // if we have schedule the initial defintion of this func, we should always schedule the update defintion.
-            if (schedule_loops) {
-                generate_loop_schedule(fdp, function, Stage(function, function.update(s - 1), s), out);
+            out << "\nplanned loop schedule for function " << function.name() << ".update(" << s - 1 << ")";
+            generate_loop_schedule(fdp, function, Stage(function, function.update(s - 1), s), out);
+            // but if this call still does not schedule anything, we explict call unscheduled()
+            bool any_scheduled = function.has_pure_definition() && function.definition().schedule().touched();
+            if (any_scheduled && !function.update(s - 1).schedule().touched()) {
+                out << ".unscheduled()";
+                Stage(function, function.update(s - 1), s).unscheduled();
             }
             out << "\n";
         }
@@ -292,12 +259,34 @@ void generate_schedule(FuzzedDataProvider &fdp, Pipeline &p, std::ostream& out) 
     // TODO: should we preturb the order?
     std::vector<std::string> order = topological_order(outputs, env);
     for (int i = order.size() - 1; i >= 0; --i) {
-        generate_function_schedule(fdp, env, order, i, out);
+        if (fdp.ConsumeBool()) {
+            generate_loop_schedule_per_function(fdp, env[order[i]], out);
+        }
+        out.flush();
+    }
+    for (int i = order.size() - 1; i >= 0; --i) {
+        // TODO: this works for linear relationship within a pipeline
+        // we need better mechanism to figure out correct producer/consumer relationship
+        std::vector<Func> producers;
+        for (int j = 0; j < i; ++j) {
+            producers.push_back(Func(env[order[j]]));
+        }
+        std::vector<Func> consumers;
+        for (int j = i + 1; j < order.size(); ++j) {
+            consumers.push_back(Func(env[order[j]]));
+        }
+        if (fdp.ConsumeBool()) {
+            generate_compute_schedule(fdp, env[order[i]], consumers, out);
+        }
+        if (fdp.ConsumeBool()) {
+            generate_store_schedule(fdp, env[order[i]], consumers, out);
+        }
         out.flush();
     }
 }
 
 static int counter = 0;
+static int internal_error_count = 0;
 
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     std::string output_dir = Internal::get_env_variable("FUZZER_OUTPUT_DIR");
@@ -325,8 +314,14 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         std::string hlpipe_file = output_dir + "/blur_" + std::to_string(counter) + ".hlpipe";
         serialize_pipeline(p, hlpipe_file, params);
     } catch (const Halide::CompileError &e) {
-        out << "\nexception: " << e.what() << "\n";
+        out << "\nUser Error: " << e.what() << "\n";
+    } catch (const Halide::InternalError &e) {
+        out << "\nInternal Error: \n" << e.what() << "\n";
+        internal_error_count++;
     }
     counter++;
+    if (internal_error_count > 0) {
+        std::cout << "current fuzzing counter " << counter << " internal error count " << internal_error_count << "\n";
+    }
     return 0;
 }
