@@ -99,18 +99,18 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
     bool is_vectorized = false;
     std::function<void()> operations[] = {
         [&]() {
-            std::vector<std::string> var_names = get_function_var_names(function);
+            std::vector<std::string> var_names = get_stage_var_names(stage);
             std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
             int split_factor = fdp.PickValueInArray(common_split_factors);
             TailStrategy tail_strategy = fdp.PickValueInArray(tail_strategies);
-            out << ".split(" << var_name_picked << ", " << var_name_picked << "_outer, " << var_name_picked << "_inner, " << split_factor << ", " << tail_strategy_to_string(tail_strategy) << ")";
-            Func(function).split(Var(var_name_picked), Var(var_name_picked + "_outer"), Var(var_name_picked + "_inner"), split_factor, tail_strategy);
+            out << ".split(" << var_name_picked << ", " << var_name_picked << "o, " << var_name_picked << "i, " << split_factor << ", " << tail_strategy_to_string(tail_strategy) << ")";
+            stage.split(Var(var_name_picked), Var(var_name_picked + "o"), Var(var_name_picked + "i"), split_factor, tail_strategy);
         },
         [&]() {
             if (fdp.remaining_bytes() <= 0) {
                 return;
             }
-            std::vector<std::string> var_names = get_function_var_names(function);
+            std::vector<std::string> var_names = get_stage_var_names(stage);
             // we need at least two vars to reorder
             if (var_names.size() < 2) {
                 return;
@@ -134,10 +134,10 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
                 }
             }
             out << ")";
-            Func(function).reorder(reorder_vars);
+            stage.reorder(reorder_vars);
         },
         [&]() {
-            std::vector<std::string> var_names = get_function_var_names(function);
+            std::vector<std::string> var_names = get_stage_var_names(stage);
             // we need at least two vars to fuse
             if (var_names.size() < 2) {
                 return;
@@ -147,37 +147,37 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             while (outer_var_name == inner_var_name && fdp.remaining_bytes() > 0) {
                 outer_var_name = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
             }
-            std::string fused_var_name = inner_var_name + "_" + outer_var_name + "_fused";
+            std::string fused_var_name = inner_var_name + "_" + outer_var_name + "f";
             out << ".fuse(" << inner_var_name << ", " << outer_var_name << ", " << fused_var_name << ")";
-            Func(function).fuse(Var(inner_var_name), Var(outer_var_name), Var(fused_var_name));
+            stage.fuse(Var(inner_var_name), Var(outer_var_name), Var(fused_var_name));
         },
         [&]() {
-            std::vector<std::string> var_names = get_function_var_names(function);
+            std::vector<std::string> var_names = get_stage_var_names(stage);
             std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
             out << ".unroll(" << var_name_picked << ")";
-            Func(function).unroll(Var(var_name_picked));
+            stage.unroll(Var(var_name_picked));
         },
         [&]() {
             if (is_vectorized) {
                 return;
             }
-            std::vector<std::string> var_names = get_function_var_names(function);
+            std::vector<std::string> var_names = get_stage_var_names(stage);
             std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
             out << ".vectorize(" << var_name_picked << ")";
-            Func(function).vectorize(Var(var_name_picked));
+            stage.vectorize(Var(var_name_picked));
             is_vectorized = true;
         },
         [&]() {
-            std::vector<std::string> var_names = get_function_var_names(function);
+            std::vector<std::string> var_names = get_stage_var_names(stage);
             std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
             out << ".parallel(" << var_name_picked << ")";
-            Func(function).parallel(Var(var_name_picked));
+            stage.parallel(Var(var_name_picked));
         },
         [&]() {
-            std::vector<std::string> var_names = get_function_var_names(function);
+            std::vector<std::string> var_names = get_stage_var_names(stage);
             std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
             out << ".serial(" << var_name_picked << ")";
-            Func(function).serial(Var(var_name_picked));
+            stage.serial(Var(var_name_picked));
         }
     };
     int depth = fdp.ConsumeIntegralInRange<int>(0, 5);
@@ -237,7 +237,7 @@ void generate_loop_schedule_per_function(FuzzedDataProvider &fdp, Internal::Func
             generate_loop_schedule(fdp, function, Stage(function, function.definition(), 0), out);
             out << "\n";
         } else {
-            out << "\nplanned loop schedule for function " << function.name() << ".update(" << s - 1 << ")";
+            out << "planned loop schedule for function " << function.name() << ".update(" << s - 1 << ")";
             generate_loop_schedule(fdp, function, Stage(function, function.update(s - 1), s), out);
             // but if this call still does not schedule anything, we explict call unscheduled()
             bool any_scheduled = function.has_pure_definition() && function.definition().schedule().touched();
@@ -300,7 +300,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     Func blurry("blurry");
     Var x("x"), y("y");
     input(x, y) = 2 * x + 5 * y;
-    RDom r(-2, 5, -2, 5);
+    RDom r(-2, 5, -2, 5, "rdom_r");
     local_sum(x, y) = 0;
     local_sum(x, y) += input(x + r.x, y + r.y);
     blurry(x, y) = cast<int32_t>(local_sum(x, y) / 25);
