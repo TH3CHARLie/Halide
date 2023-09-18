@@ -131,8 +131,11 @@ private:
 };
 
 std::string remove_counter_from_function_name(const std::string &name) {
-    if (name.find('$') != std::string::npos) {
-        return name.substr(0, name.find('$'));
+    if (name.rfind('$') != std::string::npos) {
+        if (isdigit(name[name.rfind('$') + 1])) {
+            return name.substr(0, name.rfind('$'));
+        }
+        return name;
     }
     return name;
 }

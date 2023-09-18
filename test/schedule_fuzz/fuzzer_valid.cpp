@@ -47,6 +47,21 @@ std::string get_original_var_name(const std::string &var_name) {
     return var_name;
 }
 
+std::vector<VarOrRVar> get_function_vars(const Internal::Function &function) {
+    std::vector<VarOrRVar> vars;
+    const auto &dims = function.definition().schedule().dims();
+    for (const auto &d : dims) {
+        if (d.var != Var::outermost().name()) {
+            if (d.is_rvar()) {
+                vars.push_back(RVar(d.var));
+            } else {
+                vars.push_back(Var(d.var));
+            }
+        }
+    }
+    return vars;
+}
+
 std::vector<std::string> get_function_var_names(const Internal::Function &function) {
     std::vector<std::string> var_names;
     const auto &dims = function.definition().schedule().dims();
@@ -56,6 +71,21 @@ std::vector<std::string> get_function_var_names(const Internal::Function &functi
         }
     }
     return var_names;
+}
+
+std::vector<VarOrRVar> get_stage_vars(const Stage &stage) {
+    std::vector<VarOrRVar> vars;
+    const auto &dims = stage.get_schedule().dims();
+    for (const auto &d : dims) {
+        if (d.var != Var::outermost().name()) {
+            if (d.is_rvar()) {
+                vars.push_back(RVar(d.var));
+            } else {
+                vars.push_back(Var(d.var));
+            }
+        }
+    }
+    return vars;
 }
 
 std::vector<std::string> get_stage_var_names(const Stage &stage) {
@@ -95,35 +125,43 @@ std::string tail_strategy_to_string(TailStrategy tail_strategy) {
 
 void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &function, Stage stage, std::ostream &out) {
     // available choices: split reorder fuse unroll vectorize parallel serial
-    // we only call vectorize once (#7779)
-    bool is_vectorized = false;
     std::function<void()> operations[] = {
         [&]() {
-            std::vector<std::string> var_names = get_stage_var_names(stage);
-            std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
+            std::vector<VarOrRVar> vars = get_stage_vars(stage);
+            VarOrRVar var_picked = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
             int split_factor = fdp.PickValueInArray(common_split_factors);
             TailStrategy tail_strategy = fdp.PickValueInArray(tail_strategies);
-            out << ".split(" << var_name_picked << ", " << var_name_picked << "o, " << var_name_picked << "i, " << split_factor << ", " << tail_strategy_to_string(tail_strategy) << ")";
-            stage.split(Var(var_name_picked), Var(var_name_picked + "o"), Var(var_name_picked + "i"), split_factor, tail_strategy);
+            std::string var_name = get_original_var_name(var_picked.name());
+            if (var_picked.is_rvar) {
+                out << ".split(RVar(" << var_name << "), " << "RVar(" << var_name << "o), " << "RVar(" << var_name << "i), " << split_factor << ", " << tail_strategy_to_string(tail_strategy) << ")";
+                stage.split(RVar(var_name), RVar(var_name + "o"), RVar(var_name + "i"), split_factor, tail_strategy);
+            } else {
+                out << ".split(Var(" << var_name << "), " << "Var(" << var_name << "o), " << "Var(" << var_name << "i), " << split_factor << ", " << tail_strategy_to_string(tail_strategy) << ")";
+                stage.split(Var(var_name), Var(var_name + "o"), Var(var_name + "i"), split_factor, tail_strategy);
+            }
         },
         [&]() {
             if (fdp.remaining_bytes() <= 0) {
                 return;
             }
-            std::vector<std::string> var_names = get_stage_var_names(stage);
+            std::vector<VarOrRVar> vars = get_stage_vars(stage);
             // we need at least two vars to reorder
-            if (var_names.size() < 2) {
+            if (vars.size() < 2) {
                 return;
             }
             // for reorder we always reorder everything we have in this function
             // but we need a random premutation, fdp is really bad at that, so we do rejection sampling.....
             std::vector<VarOrRVar> reorder_vars;
             std::vector<std::string> var_names_premutated;
-            while (reorder_vars.size() != var_names.size() && fdp.remaining_bytes() > 0) {
-                std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
-                if (std::find(var_names_premutated.begin(), var_names_premutated.end(), var_name_picked) == var_names_premutated.end()) {
-                    var_names_premutated.push_back(var_name_picked);
-                    reorder_vars.push_back(Var(var_name_picked));
+            while (reorder_vars.size() != vars.size() && fdp.remaining_bytes() > 0) {
+                VarOrRVar var_picked = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
+                if (std::find(var_names_premutated.begin(), var_names_premutated.end(), var_picked.name()) == var_names_premutated.end()) {
+                    var_names_premutated.push_back(var_picked.name());
+                    if (var_picked.is_rvar) {
+                        reorder_vars.push_back(RVar(get_original_var_name(var_picked.name())));
+                    } else {
+                        reorder_vars.push_back(Var(get_original_var_name(var_picked.name())));
+                    }
                 }
             }
             out << ".reorder(";
@@ -137,47 +175,73 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             stage.reorder(reorder_vars);
         },
         [&]() {
-            std::vector<std::string> var_names = get_stage_var_names(stage);
+            std::vector<VarOrRVar> vars = get_stage_vars(stage);
+            VarOrRVar var_picked = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
             // we need at least two vars to fuse
-            if (var_names.size() < 2) {
+            if (vars.size() < 2) {
                 return;
             }
-            std::string inner_var_name = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
-            std::string outer_var_name = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
-            while (outer_var_name == inner_var_name && fdp.remaining_bytes() > 0) {
-                outer_var_name = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
+            VarOrRVar inner_var = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
+            VarOrRVar outer_var = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
+            while (outer_var.name() == inner_var.name() && fdp.remaining_bytes() > 0) {
+                outer_var = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
             }
-            std::string fused_var_name = inner_var_name + "_" + outer_var_name + "f";
-            out << ".fuse(" << inner_var_name << ", " << outer_var_name << ", " << fused_var_name << ")";
-            stage.fuse(Var(inner_var_name), Var(outer_var_name), Var(fused_var_name));
-        },
-        [&]() {
-            std::vector<std::string> var_names = get_stage_var_names(stage);
-            std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
-            out << ".unroll(" << var_name_picked << ")";
-            stage.unroll(Var(var_name_picked));
-        },
-        [&]() {
-            if (is_vectorized) {
-                return;
+            std::string inner_name = get_original_var_name(inner_var.name());
+            std::string outer_name = get_original_var_name(outer_var.name());
+            // TODO: we rely on Halide to catch the error here, but we should do better
+            if (fdp.ConsumeBool()) {
+                std::string fused_var_name = "r_" + inner_name + "_" + outer_name + "_f";
+                out << ".fuse(RVar(" << inner_name << "), RVar(" << outer_name << "), RVar(" << fused_var_name << "))";
+                stage.fuse(VarOrRVar(inner_name, inner_var.is_rvar), VarOrRVar(outer_name, outer_var.is_rvar) , RVar(fused_var_name));
+            } else {
+                std::string fused_var_name = inner_name + "_" + outer_name + "_f";
+                out << ".fuse(Var(" << inner_name << "), Var(" << outer_name << "), Var(" << fused_var_name << "))";
+                stage.fuse(VarOrRVar(inner_name, inner_var.is_rvar), VarOrRVar(outer_name, outer_var.is_rvar) , Var(fused_var_name));
             }
-            std::vector<std::string> var_names = get_stage_var_names(stage);
-            std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
-            out << ".vectorize(" << var_name_picked << ")";
-            stage.vectorize(Var(var_name_picked));
-            is_vectorized = true;
         },
         [&]() {
-            std::vector<std::string> var_names = get_stage_var_names(stage);
-            std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
-            out << ".parallel(" << var_name_picked << ")";
-            stage.parallel(Var(var_name_picked));
+            std::vector<VarOrRVar> vars = get_stage_vars(stage);
+            VarOrRVar var_picked = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
+            out << ".unroll(" << var_picked.name() << ")";
+            std::string var_name = get_original_var_name(var_picked.name());
+            if (var_picked.is_rvar) {
+                stage.unroll(RVar(var_name));
+            } else {
+                stage.unroll(Var(var_name));
+            }
         },
         [&]() {
-            std::vector<std::string> var_names = get_stage_var_names(stage);
-            std::string var_name_picked = var_names[fdp.ConsumeIntegralInRange<int>(0, var_names.size() - 1)];
-            out << ".serial(" << var_name_picked << ")";
-            stage.serial(Var(var_name_picked));
+            std::vector<VarOrRVar> vars = get_stage_vars(stage);
+            VarOrRVar var_picked = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
+            out << ".vectorize(" << var_picked.name() << ")";
+            std::string var_name = get_original_var_name(var_picked.name());
+            if (var_picked.is_rvar) {
+                stage.vectorize(RVar(var_name));
+            } else {
+                stage.vectorize(Var(var_name));
+            }
+        },
+        [&]() {
+            std::vector<VarOrRVar> vars = get_stage_vars(stage);
+            VarOrRVar var_picked = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
+            out << ".parallel(" << var_picked.name() << ")";
+            std::string var_name = get_original_var_name(var_picked.name());
+            if (var_picked.is_rvar) {
+                stage.parallel(RVar(var_name));
+            } else {
+                stage.parallel(Var(var_name));
+            }
+        },
+        [&]() {
+            std::vector<VarOrRVar> vars = get_stage_vars(stage);
+            VarOrRVar var_picked = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
+            out << ".serial(" << var_picked.name() << ")";
+            std::string var_name = get_original_var_name(var_picked.name());
+            if (var_picked.is_rvar) {
+                stage.serial(RVar(var_name));
+            } else {
+                stage.serial(Var(var_name));
+            }
         }
     };
     int depth = fdp.ConsumeIntegralInRange<int>(0, 5);
@@ -198,10 +262,14 @@ void generate_compute_schedule(FuzzedDataProvider &fdp, Internal::Function &func
                 return;
             }
             Func compute_at_func = consumers[fdp.ConsumeIntegralInRange<int>(0, consumers.size() - 1)];
-            auto compute_at_func_var_names = get_function_var_names(compute_at_func.function());
-            std::string var_name_picked = compute_at_func_var_names[fdp.ConsumeIntegralInRange<int>(0, compute_at_func_var_names.size() - 1)];
-            out << ".compute_at(" << compute_at_func.name() << ", " << var_name_picked << ")";
-            Func(function).compute_at(compute_at_func, Var(var_name_picked));
+            std::vector<VarOrRVar> compute_at_func_vars = get_function_vars(compute_at_func.function());
+            VarOrRVar var_picked = compute_at_func_vars[fdp.ConsumeIntegralInRange<int>(0, compute_at_func_vars.size() - 1)];
+            out << ".compute_at(" << compute_at_func.name() << ", " << var_picked.name() << ")";
+            if (var_picked.is_rvar) {
+                Func(function).compute_at(compute_at_func, RVar(var_picked.name()));
+            } else {
+                Func(function).compute_at(compute_at_func, Var(var_picked.name()));
+            }
         }
     };
     fdp.PickValueInArray(operations)();
@@ -220,10 +288,14 @@ void generate_store_schedule(FuzzedDataProvider &fdp, Internal::Function &functi
                 return;
             }
             Func store_at_func = consumers[fdp.ConsumeIntegralInRange<int>(0, consumers.size() - 1)];
-            auto store_at_func_var_names = get_function_var_names(store_at_func.function());
-            std::string var_name_picked = store_at_func_var_names[fdp.ConsumeIntegralInRange<int>(0, store_at_func_var_names.size() - 1)];
-            out << ".store_at(" << store_at_func.name() << ", " << var_name_picked << ")";
-            Func(function).store_at(store_at_func, Var(var_name_picked));
+            std::vector<VarOrRVar> store_at_func_vars = get_function_vars(store_at_func.function());
+            VarOrRVar var_picked = store_at_func_vars[fdp.ConsumeIntegralInRange<int>(0, store_at_func_vars.size() - 1)];
+            out << ".store_at(" << store_at_func.name() << ", " << var_picked.name() << ")";
+            if (var_picked.is_rvar) {
+                Func(function).store_at(store_at_func, RVar(var_picked.name()));
+            } else {
+                Func(function).store_at(store_at_func, Var(var_picked.name()));
+            }
         }
     };
     fdp.PickValueInArray(operations)();
