@@ -40,7 +40,7 @@ private:
 
     // A lookup table for finding parameters via their names,
     // used for preventing the same parameter being serialized multiple times
-    std::map<std::string, Internal::Parameter> parameters_in_pipeline;
+    std::map<std::string, Parameter> parameters_in_pipeline;
 
     // A lookup table for finding buffers via their names,
     // used for preventing the same buffer being serialized multiple times
@@ -1308,13 +1308,19 @@ Offset<Serialize::Parameter> Serializer::serialize_parameter(FlatBufferBuilder &
         return Serialize::CreateParameter(builder, defined, is_buffer, type_serialized, dimensions, name_serialized, host_alignment,
                                           builder.CreateVector(buffer_constraints_serialized), memory_type_serialized);
     } else {
-        const uint64_t data = parameter.scalar_raw_value();
+        static_assert(FLATBUFFERS_USE_STD_OPTIONAL);
+        const auto make_optional_u64 = [](const std::optional<halide_scalar_value_t> &v) -> std::optional<uint64_t> {
+            return v.has_value() ?
+                       std::optional<uint64_t>(v.value().u.u64) :
+                       std::nullopt;
+        };
+        const auto scalar_data = make_optional_u64(parameter.scalar_data());
         const auto scalar_default_serialized = serialize_expr(builder, parameter.default_value());
         const auto scalar_min_serialized = serialize_expr(builder, parameter.min_value());
         const auto scalar_max_serialized = serialize_expr(builder, parameter.max_value());
         const auto scalar_estimate_serialized = serialize_expr(builder, parameter.estimate());
         return Serialize::CreateParameter(builder, defined, is_buffer, type_serialized,
-                                          dimensions, name_serialized, 0, 0, Serialize::MemoryType_Auto, data,
+                                          dimensions, name_serialized, 0, 0, Serialize::MemoryType_Auto, scalar_data,
                                           scalar_default_serialized.first, scalar_default_serialized.second,
                                           scalar_min_serialized.first, scalar_min_serialized.second,
                                           scalar_max_serialized.first, scalar_max_serialized.second,
@@ -1474,7 +1480,7 @@ void Serializer::serialize(const Pipeline &pipeline, const std::string &filename
 
 }  // namespace Internal
 
-void serialize_pipeline(const Pipeline &pipeline, const std::string &filename, std::map<std::string, Internal::Parameter> &params) {
+void serialize_pipeline(const Pipeline &pipeline, const std::string &filename, std::map<std::string, Parameter> &params) {
     Internal::Serializer serializer;
     serializer.serialize(pipeline, filename);
     params = serializer.get_external_parameters();
@@ -1486,7 +1492,7 @@ void serialize_pipeline(const Pipeline &pipeline, const std::string &filename, s
 
 namespace Halide {
 
-void serialize_pipeline(const Pipeline &pipeline, const std::string &filename, std::map<std::string, Internal::Parameter> &params) {
+void serialize_pipeline(const Pipeline &pipeline, const std::string &filename, std::map<std::string, Parameter> &params) {
     user_error << "Serialization is not supported in this build of Halide; try rebuilding with WITH_SERIALIZATION=ON.";
 }
 
