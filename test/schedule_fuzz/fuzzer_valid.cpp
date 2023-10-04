@@ -268,7 +268,7 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             } else {
                 stage.serial(Var(var_name));
             }
-        }
+        },
         [&]() {
             if (!is_update) {
                 return;
