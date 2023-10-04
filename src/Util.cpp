@@ -193,6 +193,20 @@ string unique_name(char prefix) {
     return prefix + std::to_string(unique_count((size_t)(prefix)));
 }
 
+std::string remove_counter_from_function_name(const std::string &name) {
+    if (name.rfind('$') != std::string::npos) {
+        if (isdigit(name[name.rfind('$') + 1])) {
+            int index = name.rfind('$') + 1;
+            while (index < name.size() && isdigit(name[index])) {
+                index++;
+            }
+            return name.substr(0, name.rfind('$')) + name.substr(index);
+        }
+        return name;
+    }
+    return name;
+}
+
 string unique_name(const std::string &prefix) {
     string sanitized = prefix;
 

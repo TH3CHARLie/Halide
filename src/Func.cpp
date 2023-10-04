@@ -862,7 +862,7 @@ Func Stage::rfactor(vector<pair<RVar, Var>> preserved) {
         init_vals[i] = prover_result.pattern.identities[i];
     }
 
-    Func intm(func_name + "_intm");
+    Func intm(remove_counter_from_function_name(func_name) + "_intm");
     intm(init_args) = Tuple(init_vals);
 
     // Args of the update definition of the intermediate Func

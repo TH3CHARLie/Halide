@@ -173,6 +173,9 @@ std::string unique_name(char prefix);
 std::string unique_name(const std::string &prefix);
 // @}
 
+// TODO(Xuanda): For fuzzing
+std::string remove_counter_from_function_name(const std::string &name);
+
 /** Test if the first string starts with the second string */
 bool starts_with(const std::string &str, const std::string &prefix);
 

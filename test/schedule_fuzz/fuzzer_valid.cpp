@@ -73,7 +73,7 @@ std::vector<std::string> get_function_var_names(const Internal::Function &functi
     return var_names;
 }
 
-std::vector<VarOrRVar> get_stage_vars(const Stage &stage) {
+std::vector<VarOrRVar> get_stage_vars_or_rvars(const Stage &stage) {
     std::vector<VarOrRVar> vars;
     const auto &dims = stage.get_schedule().dims();
     for (const auto &d : dims) {
@@ -86,6 +86,32 @@ std::vector<VarOrRVar> get_stage_vars(const Stage &stage) {
         }
     }
     return vars;
+}
+
+std::vector<Var> get_stage_vars(const Stage &stage) {
+    std::vector<Var> vars;
+    const auto &dims = stage.get_schedule().dims();
+    for (const auto &d : dims) {
+        if (d.var != Var::outermost().name()) {
+            if (!d.is_rvar()) {
+                vars.push_back(Var(d.var));
+            }
+        }
+    }
+    return vars;
+}
+
+std::vector<RVar> get_stage_rvars(const Stage &stage) {
+    std::vector<RVar> rvars;
+    const auto &dims = stage.get_schedule().dims();
+    for (const auto &d : dims) {
+        if (d.var != Var::outermost().name()) {
+            if (d.is_rvar()) {
+                rvars.push_back(RVar(d.var));
+            }
+        }
+    }
+    return rvars;
 }
 
 std::vector<std::string> get_stage_var_names(const Stage &stage) {
@@ -123,11 +149,11 @@ std::string tail_strategy_to_string(TailStrategy tail_strategy) {
     }
 }
 
-void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &function, Stage stage, std::ostream &out) {
+void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &function, Stage stage, std::ostream &out, bool is_update = false) {
     // available choices: split reorder fuse unroll vectorize parallel serial
     std::function<void()> operations[] = {
         [&]() {
-            std::vector<VarOrRVar> vars = get_stage_vars(stage);
+            std::vector<VarOrRVar> vars = get_stage_vars_or_rvars(stage);
             VarOrRVar var_picked = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
             int split_factor = fdp.PickValueInArray(common_split_factors);
             TailStrategy tail_strategy = fdp.PickValueInArray(tail_strategies);
@@ -144,7 +170,7 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             if (fdp.remaining_bytes() <= 0) {
                 return;
             }
-            std::vector<VarOrRVar> vars = get_stage_vars(stage);
+            std::vector<VarOrRVar> vars = get_stage_vars_or_rvars(stage);
             // we need at least two vars to reorder
             if (vars.size() < 2) {
                 return;
@@ -175,7 +201,7 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             stage.reorder(reorder_vars);
         },
         [&]() {
-            std::vector<VarOrRVar> vars = get_stage_vars(stage);
+            std::vector<VarOrRVar> vars = get_stage_vars_or_rvars(stage);
             VarOrRVar var_picked = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
             // we need at least two vars to fuse
             if (vars.size() < 2) {
@@ -200,7 +226,7 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             }
         },
         [&]() {
-            std::vector<VarOrRVar> vars = get_stage_vars(stage);
+            std::vector<VarOrRVar> vars = get_stage_vars_or_rvars(stage);
             VarOrRVar var_picked = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
             out << ".unroll(" << var_picked.name() << ")";
             std::string var_name = get_original_var_name(var_picked.name());
@@ -211,7 +237,7 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             }
         },
         [&]() {
-            std::vector<VarOrRVar> vars = get_stage_vars(stage);
+            std::vector<VarOrRVar> vars = get_stage_vars_or_rvars(stage);
             VarOrRVar var_picked = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
             out << ".vectorize(" << var_picked.name() << ")";
             std::string var_name = get_original_var_name(var_picked.name());
@@ -222,7 +248,7 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             }
         },
         [&]() {
-            std::vector<VarOrRVar> vars = get_stage_vars(stage);
+            std::vector<VarOrRVar> vars = get_stage_vars_or_rvars(stage);
             VarOrRVar var_picked = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
             out << ".parallel(" << var_picked.name() << ")";
             std::string var_name = get_original_var_name(var_picked.name());
@@ -233,7 +259,7 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             }
         },
         [&]() {
-            std::vector<VarOrRVar> vars = get_stage_vars(stage);
+            std::vector<VarOrRVar> vars = get_stage_vars_or_rvars(stage);
             VarOrRVar var_picked = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
             out << ".serial(" << var_picked.name() << ")";
             std::string var_name = get_original_var_name(var_picked.name());
@@ -242,6 +268,23 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             } else {
                 stage.serial(Var(var_name));
             }
+        }
+        [&]() {
+            if (!is_update) {
+                return;
+            }
+            std::vector<Var> vars = {Var("u"), Var("v"), Var("w"), Var("z")};
+            std::vector<RVar> rvars = get_stage_rvars(stage);
+            Var var_picked = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
+            RVar rvar_picked = rvars[fdp.ConsumeIntegralInRange<int>(0, rvars.size() - 1)];
+            // NOTE: rfactor won't work on fused rvars
+            if (rvar_picked.name().find("f") != std::string::npos) {
+                return;
+            }
+            out << ".rfactor(" << rvar_picked.name() << ", " << var_picked.name() << ")";
+            std::string var_name = get_original_var_name(var_picked.name());
+            std::string rvar_name = get_original_var_name(rvar_picked.name());
+            stage.rfactor(RVar(rvar_name), Var(var_name));
         }
     };
     int depth = fdp.ConsumeIntegralInRange<int>(0, 5);
@@ -306,11 +349,11 @@ void generate_loop_schedule_per_function(FuzzedDataProvider &fdp, Internal::Func
     for (int s = 0; s <= (int)function.updates().size(); s++) {
         if (s == 0) {
             out << "planned loop schedule for function " << function.name();
-            generate_loop_schedule(fdp, function, Stage(function, function.definition(), 0), out);
+            generate_loop_schedule(fdp, function, Stage(function, function.definition(), 0), out, false);
             out << "\n";
         } else {
             out << "planned loop schedule for function " << function.name() << ".update(" << s - 1 << ")";
-            generate_loop_schedule(fdp, function, Stage(function, function.update(s - 1), s), out);
+            generate_loop_schedule(fdp, function, Stage(function, function.update(s - 1), s), out, true);
             // but if this call still does not schedule anything, we explict call unscheduled()
             bool any_scheduled = function.has_pure_definition() && function.definition().schedule().touched();
             if (any_scheduled && !function.update(s - 1).schedule().touched()) {
@@ -382,7 +425,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         generate_schedule(fdp, p, out);
         // compute hash of this schedule, read a global hash object
         p.compile_to_module({}, "blur", get_host_target());
-        std::map<std::string, Internal::Parameter> params;
+        std::map<std::string, Parameter> params;
         std::string hlpipe_file = output_dir + "/blur_" + std::to_string(counter) + ".hlpipe";
         serialize_pipeline(p, hlpipe_file, params);
     } catch (const Halide::CompileError &e) {
