@@ -151,6 +151,7 @@ std::string tail_strategy_to_string(TailStrategy tail_strategy) {
 
 void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &function, Stage stage, std::ostream &out, bool is_update = false) {
     // available choices: split reorder fuse unroll vectorize parallel serial
+    bool is_rfactored = false;
     std::function<void()> operations[] = {
         [&]() {
             std::vector<VarOrRVar> vars = get_stage_vars_or_rvars(stage);
@@ -268,23 +269,6 @@ void generate_loop_schedule(FuzzedDataProvider &fdp, Internal::Function &functio
             } else {
                 stage.serial(Var(var_name));
             }
-        },
-        [&]() {
-            if (!is_update) {
-                return;
-            }
-            std::vector<Var> vars = {Var("u"), Var("v"), Var("w"), Var("z")};
-            std::vector<RVar> rvars = get_stage_rvars(stage);
-            Var var_picked = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
-            RVar rvar_picked = rvars[fdp.ConsumeIntegralInRange<int>(0, rvars.size() - 1)];
-            // NOTE: rfactor won't work on fused rvars
-            if (rvar_picked.name().find("f") != std::string::npos) {
-                return;
-            }
-            out << ".rfactor(" << rvar_picked.name() << ", " << var_picked.name() << ")";
-            std::string var_name = get_original_var_name(var_picked.name());
-            std::string rvar_name = get_original_var_name(rvar_picked.name());
-            stage.rfactor(RVar(rvar_name), Var(var_name));
         }
     };
     int depth = fdp.ConsumeIntegralInRange<int>(0, 5);
@@ -365,6 +349,26 @@ void generate_loop_schedule_per_function(FuzzedDataProvider &fdp, Internal::Func
     }
 }
 
+void generate_rfactor_schedule(FuzzedDataProvider &fdp, Internal::Function &function, std::ostream &out) {
+    if (function.updates().size() == 0) {
+        return;
+    }
+    int update_stage_index = fdp.ConsumeIntegralInRange<int>(0, function.updates().size() - 1);
+    Stage stage = Stage(function, function.update(update_stage_index), update_stage_index + 1);
+    std::vector<Var> vars = {Var("u"), Var("v"), Var("w"), Var("z")};
+    std::vector<RVar> rvars = get_stage_rvars(stage);
+    Var var_picked = vars[fdp.ConsumeIntegralInRange<int>(0, vars.size() - 1)];
+    RVar rvar_picked = rvars[fdp.ConsumeIntegralInRange<int>(0, rvars.size() - 1)];
+    // NOTE: rfactor won't work on fused rvars
+    if (rvar_picked.name().find("f") != std::string::npos) {
+        return;
+    }
+    out << "planned rfactor schedule for function " << function.name() << ".rfactor(" << rvar_picked.name() << ", " << var_picked.name() << ")";
+    std::string var_name = get_original_var_name(var_picked.name());
+    std::string rvar_name = get_original_var_name(rvar_picked.name());
+    stage.rfactor(RVar(rvar_name), Var(var_name));
+}
+
 void generate_schedule(FuzzedDataProvider &fdp, Pipeline &p, std::ostream& out) {
     std::vector<Internal::Function> outputs;
     for (const auto &f : p.outputs()) {
@@ -379,22 +383,43 @@ void generate_schedule(FuzzedDataProvider &fdp, Pipeline &p, std::ostream& out) 
         }
         out.flush();
     }
+    // once we generate loop schedules in the original DAG, we try to generate rfactor/in schedules to change the DAG
     for (int i = order.size() - 1; i >= 0; --i) {
+        if (fdp.ConsumeBool()) {
+            generate_rfactor_schedule(fdp, env[order[i]], out);
+        }
+        out.flush();
+    }
+    // rebuild the DAG in case any new functions are created
+    std::map<std::string, Internal::Function> new_env = build_environment(outputs);
+    std::vector<std::string> new_order = topological_order(outputs, new_env);
+
+    // for new functions, generate loop schedules
+    for (int i = new_order.size() - 1; i >= 0; --i) {
+        if (env.count(new_order[i]) == 0) {
+            if (fdp.ConsumeBool()) {
+                generate_loop_schedule_per_function(fdp, new_env[new_order[i]], out);
+            }
+        }
+        out.flush();
+    }
+
+    for (int i = new_order.size() - 1; i >= 0; --i) {
         // TODO: this works for linear relationship within a pipeline
         // we need better mechanism to figure out correct producer/consumer relationship
         std::vector<Func> producers;
         for (int j = 0; j < i; ++j) {
-            producers.push_back(Func(env[order[j]]));
+            producers.push_back(Func(new_env[new_order[j]]));
         }
         std::vector<Func> consumers;
-        for (int j = i + 1; j < order.size(); ++j) {
-            consumers.push_back(Func(env[order[j]]));
+        for (int j = i + 1; j < new_order.size(); ++j) {
+            consumers.push_back(Func(new_env[new_order[j]]));
         }
         if (fdp.ConsumeBool()) {
-            generate_compute_schedule(fdp, env[order[i]], consumers, out);
+            generate_compute_schedule(fdp, new_env[new_order[i]], consumers, out);
         }
         if (fdp.ConsumeBool()) {
-            generate_store_schedule(fdp, env[order[i]], consumers, out);
+            generate_store_schedule(fdp, new_env[new_order[i]], consumers, out);
         }
         out.flush();
     }
