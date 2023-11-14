@@ -11,6 +11,7 @@
 #include "Buffer.h"
 #include "Expr.h"
 #include "FunctionPtr.h"
+#include "LoopPartitioningDirective.h"
 #include "ModulusRemainder.h"
 #include "Parameter.h"
 #include "PrefetchDirective.h"
@@ -807,8 +808,13 @@ struct For : public StmtNode<For> {
     ForType for_type;
     DeviceAPI device_api;
     Stmt body;
+    Partition partition_policy;
 
-    static Stmt make(const std::string &name, Expr min, Expr extent, ForType for_type, DeviceAPI device_api, Stmt body);
+    static Stmt make(const std::string &name,
+                     Expr min, Expr extent,
+                     ForType for_type, Partition partition_policy,
+                     DeviceAPI device_api,
+                     Stmt body);
 
     bool is_unordered_parallel() const {
         return Halide::Internal::is_unordered_parallel(for_type);
@@ -916,6 +922,21 @@ struct Prefetch : public StmtNode<Prefetch> {
                      Expr condition, Stmt body);
 
     static const IRNodeType _node_type = IRNodeType::Prefetch;
+};
+
+/**
+ * Represents a location where storage will be hoisted to for a Func / Realize
+ * node with a given name.
+ *
+ */
+struct HoistedStorage : public StmtNode<HoistedStorage> {
+    std::string name;
+    Stmt body;
+
+    static Stmt make(const std::string &name,
+                     Stmt body);
+
+    static const IRNodeType _node_type = IRNodeType::HoistedStorage;
 };
 
 /** Lock all the Store nodes in the body statement.

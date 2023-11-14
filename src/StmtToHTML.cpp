@@ -1306,7 +1306,8 @@ private:
         int max_block_cost = cost_model.get_max_compute_cost(true);
         int line_cost = cost_model.get_compute_cost(op, false);
         int block_cost = cost_model.get_compute_cost(op, true);
-        if (dynamic_cast<const LetStmt *>(op) || dynamic_cast<const Allocate *>(op)) {
+        if ((op != nullptr) &&
+            ((op->node_type == IRNodeType::LetStmt) || op->node_type == IRNodeType::Allocate)) {
             block_cost = line_cost;
         }
         std::string _id = "cc-" + std::to_string(id);
@@ -1319,7 +1320,8 @@ private:
         int max_block_cost = cost_model.get_max_data_movement_cost(true);
         int line_cost = cost_model.get_data_movement_cost(op, false);
         int block_cost = cost_model.get_data_movement_cost(op, true);
-        if (dynamic_cast<const LetStmt *>(op) || dynamic_cast<const Allocate *>(op)) {
+        if ((op != nullptr) &&
+            ((op->node_type == IRNodeType::LetStmt) || op->node_type == IRNodeType::Allocate)) {
             block_cost = line_cost;
         }
         std::string _id = "dc-" + std::to_string(id);
@@ -2217,6 +2219,45 @@ private:
         print_html_element("span", "matched ClosingBrace cb-" + std::to_string(id), "}");
 
         // Close div holding this atomic
+        print_closing_tag("div");
+        print_ln();
+    }
+
+    void visit(const HoistedStorage *op) override {
+        // Give this node a unique id
+        int id = gen_unique_id();
+
+        // Start a dive to hold code for this hoisted storage
+        print_opening_tag("div", "HoistedStorage");
+
+        // Generate the show hide icon/text buttons
+        print_show_hide_btn_begin(id);
+
+        // -- print text
+        print_html_element("span", "matched keyword", "hoisted_storage");
+        if (!op->name.empty()) {
+            print_html_element("span", "matched", "(");
+            print_html_element("span", "Symbol", op->name);
+            print_html_element("span", "matched", ")");
+        }
+
+        // Open code block to hold hoisted storage body
+        print_opening_brace();
+        print_show_hide_btn_end(op);
+
+        // Open indented div to hold hoisted storage code
+        print_opening_tag("div", "indent HoistedStorageBody", "", id);
+
+        // Print hoisted storage body
+        print(op->body);
+
+        // Close indented div holding body code
+        print_closing_tag("div");
+
+        // Close code block holding fork body
+        print_html_element("span", "matched ClosingBrace cb-" + std::to_string(id), "}");
+
+        // Close div holding this hoisted storage
         print_closing_tag("div");
         print_ln();
     }
