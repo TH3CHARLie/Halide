@@ -384,12 +384,12 @@ void generate_schedule(FuzzedDataProvider &fdp, Pipeline &p, std::ostream& out) 
         out.flush();
     }
     // once we generate loop schedules in the original DAG, we try to generate rfactor/in schedules to change the DAG
-    for (int i = order.size() - 1; i >= 0; --i) {
-        if (fdp.ConsumeBool()) {
-            generate_rfactor_schedule(fdp, env[order[i]], out);
-        }
-        out.flush();
-    }
+    // for (int i = order.size() - 1; i >= 0; --i) {
+    //     if (fdp.ConsumeBool()) {
+    //         generate_rfactor_schedule(fdp, env[order[i]], out);
+    //     }
+    //     out.flush();
+    // }
     // rebuild the DAG in case any new functions are created
     std::map<std::string, Internal::Function> new_env = build_environment(outputs);
     std::vector<std::string> new_order = topological_order(outputs, new_env);
@@ -434,24 +434,85 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         std::cout << "[SKIP] Halide was compiled without exceptions.\n";
         return 0;
     }
-    std::ofstream out(output_dir + "/blur_" + std::to_string(counter) + ".txt");
-    Func input("input");
-    Func local_sum("local_sum");
-    Func blurry("blurry");
-    Var x("x"), y("y");
-    input(x, y) = 2 * x + 5 * y;
-    RDom r(-2, 5, -2, 5, "rdom_r");
-    local_sum(x, y) = 0;
-    local_sum(x, y) += input(x + r.x, y + r.y);
-    blurry(x, y) = cast<int32_t>(local_sum(x, y) / 25);
-    Pipeline p({blurry});
+    std::ofstream out(output_dir + "/bilateral_grid_" + std::to_string(counter) + ".txt");
+    ImageParam input(Float(32), 2, "input");
+    const float r_sigma = 0.1;
+    const int s_sigma = 8;
+    Func bilateral_grid{"bilateral_grid"};
+
+    Var x("x"), y("y"), z("z"), c("c");
+
+    // Add a boundary condition
+    Func clamped = Halide::BoundaryConditions::repeat_edge(input);
+
+    // Construct the bilateral grid
+    RDom r(0, s_sigma, 0, s_sigma);
+    Expr val = clamped(x * s_sigma + r.x - s_sigma / 2, y * s_sigma + r.y - s_sigma / 2);
+    val = clamp(val, 0.0f, 1.0f);
+
+    Expr zi = cast<int>(val * (1.0f / r_sigma) + 0.5f);
+
+    Func histogram("histogram");
+    histogram(x, y, z, c) = 0.0f;
+    histogram(x, y, zi, c) += mux(c, {val, 1.0f});
+
+    // Blur the grid using a five-tap filter
+    Func blurx("blurx"), blury("blury"), blurz("blurz");
+    blurz(x, y, z, c) = (histogram(x, y, z - 2, c) +
+                            histogram(x, y, z - 1, c) * 4 +
+                            histogram(x, y, z, c) * 6 +
+                            histogram(x, y, z + 1, c) * 4 +
+                            histogram(x, y, z + 2, c));
+    blurx(x, y, z, c) = (blurz(x - 2, y, z, c) +
+                            blurz(x - 1, y, z, c) * 4 +
+                            blurz(x, y, z, c) * 6 +
+                            blurz(x + 1, y, z, c) * 4 +
+                            blurz(x + 2, y, z, c));
+    blury(x, y, z, c) = (blurx(x, y - 2, z, c) +
+                            blurx(x, y - 1, z, c) * 4 +
+                            blurx(x, y, z, c) * 6 +
+                            blurx(x, y + 1, z, c) * 4 +
+                            blurx(x, y + 2, z, c));
+
+    // Take trilinear samples to compute the output
+    val = clamp(input(x, y), 0.0f, 1.0f);
+    Expr zv = val * (1.0f / r_sigma);
+    zi = cast<int>(zv);
+    Expr zf = zv - zi;
+    Expr xf = cast<float>(x % s_sigma) / s_sigma;
+    Expr yf = cast<float>(y % s_sigma) / s_sigma;
+    Expr xi = x / s_sigma;
+    Expr yi = y / s_sigma;
+    Func interpolated("interpolated");
+    interpolated(x, y, c) =
+        lerp(lerp(lerp(blury(xi, yi, zi, c), blury(xi + 1, yi, zi, c), xf),
+                    lerp(blury(xi, yi + 1, zi, c), blury(xi + 1, yi + 1, zi, c), xf), yf),
+                lerp(lerp(blury(xi, yi, zi + 1, c), blury(xi + 1, yi, zi + 1, c), xf),
+                    lerp(blury(xi, yi + 1, zi + 1, c), blury(xi + 1, yi + 1, zi + 1, c), xf), yf),
+                zf);
+
+    // Normalize
+    bilateral_grid(x, y) = interpolated(x, y, 0) / interpolated(x, y, 1);
+    Pipeline p({bilateral_grid});
+    // create input buffer
+    const int width = 128;
+    const int height = 128;
+    Buffer<float, 2> input_buf(width, height);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            float val = (float)(x + y * width) / (width * height);
+            input_buf(x, y) = val;
+        }
+    }
+    input.set(input_buf);
+
     FuzzedDataProvider fdp(data, size);
     try {
         generate_schedule(fdp, p, out);
         // compute hash of this schedule, read a global hash object
-        p.compile_to_module({}, "blur", get_host_target());
+        p.compile_to_module({input}, "bilateral_grid", get_host_target());
         std::map<std::string, Parameter> params;
-        std::string hlpipe_file = output_dir + "/blur_" + std::to_string(counter) + ".hlpipe";
+        std::string hlpipe_file = output_dir + "/bilateral_grid_" + std::to_string(counter) + ".hlpipe";
         serialize_pipeline(p, hlpipe_file, params);
     } catch (const Halide::CompileError &e) {
         out << "\nUser Error: " << e.what() << "\n";
