@@ -349,6 +349,11 @@ public:
     Stage &vectorize(const VarOrRVar &var, const Expr &factor, TailStrategy tail = TailStrategy::Auto);
     Stage &unroll(const VarOrRVar &var, const Expr &factor, TailStrategy tail = TailStrategy::Auto);
     Stage &partition(const VarOrRVar &var, Partition partition_policy);
+    Stage &never_partition_all();
+    Stage &never_partition(const std::vector<VarOrRVar> &vars);
+    Stage &always_partition_all();
+    Stage &always_partition(const std::vector<VarOrRVar> &vars);
+
     Stage &tile(const VarOrRVar &x, const VarOrRVar &y,
                 const VarOrRVar &xo, const VarOrRVar &yo,
                 const VarOrRVar &xi, const VarOrRVar &yi, const Expr &xfactor, const Expr &yfactor,
@@ -378,6 +383,20 @@ public:
     reorder(const VarOrRVar &x, const VarOrRVar &y, Args &&...args) {
         std::vector<VarOrRVar> collected_args{x, y, std::forward<Args>(args)...};
         return reorder(collected_args);
+    }
+
+    template<typename... Args>
+    HALIDE_NO_USER_CODE_INLINE typename std::enable_if<Internal::all_are_convertible<VarOrRVar, Args...>::value, Stage &>::type
+    never_partition(const VarOrRVar &x, Args &&...args) {
+        std::vector<VarOrRVar> collected_args{x, std::forward<Args>(args)...};
+        return never_partition(collected_args);
+    }
+
+    template<typename... Args>
+    HALIDE_NO_USER_CODE_INLINE typename std::enable_if<Internal::all_are_convertible<VarOrRVar, Args...>::value, Stage &>::type
+    always_partition(const VarOrRVar &x, Args &&...args) {
+        std::vector<VarOrRVar> collected_args{x, std::forward<Args>(args)...};
+        return always_partition(collected_args);
     }
 
     Stage &rename(const VarOrRVar &old_name, const VarOrRVar &new_name);
@@ -1450,6 +1469,40 @@ public:
      * The default policy is Auto. */
     Func &partition(const VarOrRVar &var, Partition partition_policy);
 
+    /** Set the loop partition policy to Never for a vector of Vars and
+     * RVars. */
+    Func &never_partition(const std::vector<VarOrRVar> &vars);
+
+    /** Set the loop partition policy to Never for some number of Vars and RVars. */
+    template<typename... Args>
+    HALIDE_NO_USER_CODE_INLINE typename std::enable_if<Internal::all_are_convertible<VarOrRVar, Args...>::value, Func &>::type
+    never_partition(const VarOrRVar &x, Args &&...args) {
+        std::vector<VarOrRVar> collected_args{x, std::forward<Args>(args)...};
+        return never_partition(collected_args);
+    }
+
+    /** Set the loop partition policy to Never for all Vars and RVar of the
+     * initial definition of the Func. It must be called separately on any
+     * update definitions. */
+    Func &never_partition_all();
+
+    /** Set the loop partition policy to Always for a vector of Vars and
+     * RVars. */
+    Func &always_partition(const std::vector<VarOrRVar> &vars);
+
+    /** Set the loop partition policy to Always for some number of Vars and RVars. */
+    template<typename... Args>
+    HALIDE_NO_USER_CODE_INLINE typename std::enable_if<Internal::all_are_convertible<VarOrRVar, Args...>::value, Func &>::type
+    always_partition(const VarOrRVar &x, Args &&...args) {
+        std::vector<VarOrRVar> collected_args{x, std::forward<Args>(args)...};
+        return always_partition(collected_args);
+    }
+
+    /** Set the loop partition policy to Always for all Vars and RVar of the
+     * initial definition of the Func. It must be called separately on any
+     * update definitions. */
+    Func &always_partition_all();
+
     /** Statically declare that the range over which a function should
      * be evaluated is given by the second and third arguments. This
      * can let Halide perform some optimizations. E.g. if you know
@@ -2227,6 +2280,21 @@ public:
      * deadlock and a bound on the number of threads launched.
      */
     Func &async();
+
+    /** Expands the storage of the function by an extra dimension
+     * to enable ring buffering. For this to be useful the storage
+     * of the function has to be hoisted to an upper loop level using
+     * \ref Func::hoist_storage. The index for the new ring buffer dimension
+     * is calculated implicitly based on a linear combination of the all of
+     * the loop variables between hoist_storage and compute_at/store_at
+     * loop levels. Scheduling a function with ring_buffer increases the
+     * amount of memory required for this function by an *extent* times.
+     * ring_buffer is especially useful in combination with \ref Func::async,
+     * but can be used without it.
+     *
+     * The extent is expected to be a positive integer.
+     */
+    Func &ring_buffer(Expr extent);
 
     /** Bound the extent of a Func's storage, but not extent of its
      * compute. This can be useful for forcing a function's allocation

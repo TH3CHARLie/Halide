@@ -1354,8 +1354,7 @@ void CodeGen_ARM::visit(const Call *op) {
             if (value) {
                 return;
             }
-        } else if (target.os != Target::Linux) {
-            // Furthermore, roundevenf isn't always in the standard library on arm-32
+        } else {
             value = codegen(lower_round_to_nearest_ties_to_even(op->args[0]));
             return;
         }
@@ -1648,48 +1647,37 @@ string CodeGen_ARM::mcpu_tune() const {
 }
 
 string CodeGen_ARM::mattrs() const {
+    std::vector<std::string_view> attrs;
+    if (target.has_feature(Target::ARMFp16)) {
+        attrs.emplace_back("+fullfp16");
+    }
+    if (target.has_feature(Target::ARMv81a)) {
+        attrs.emplace_back("+v8.1a");
+    }
+    if (target.has_feature(Target::ARMDotProd)) {
+        attrs.emplace_back("+dotprod");
+    }
     if (target.bits == 32) {
         if (target.has_feature(Target::ARMv7s)) {
-            return "+neon";
+            attrs.emplace_back("+neon");
         }
         if (!target.has_feature(Target::NoNEON)) {
-            return "+neon";
+            attrs.emplace_back("+neon");
         } else {
-            return "-neon";
+            attrs.emplace_back("-neon");
         }
     } else {
         // TODO: Should Halide's SVE flags be 64-bit only?
-        string arch_flags;
-        string separator;
         if (target.has_feature(Target::SVE2)) {
-            arch_flags = "+sve2";
-            separator = ",";
+            attrs.emplace_back("+sve2");
         } else if (target.has_feature(Target::SVE)) {
-            arch_flags = "+sve";
-            separator = ",";
+            attrs.emplace_back("+sve");
         }
-
-        if (target.has_feature(Target::ARMv81a)) {
-            arch_flags += separator + "+v8.1a";
-            separator = ",";
-        }
-
-        if (target.has_feature(Target::ARMDotProd)) {
-            arch_flags += separator + "+dotprod";
-            separator = ",";
-        }
-
-        if (target.has_feature(Target::ARMFp16)) {
-            arch_flags += separator + "+fullfp16";
-            separator = ",";
-        }
-
         if (target.os == Target::IOS || target.os == Target::OSX) {
-            return arch_flags + separator + "+reserve-x18";
-        } else {
-            return arch_flags;
+            attrs.emplace_back("+reserve-x18");
         }
     }
+    return join_strings(attrs, ",");
 }
 
 bool CodeGen_ARM::use_soft_float_abi() const {

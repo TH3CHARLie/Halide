@@ -126,8 +126,8 @@ Stmt substitute_in(const string &name, const Expr &value, bool calls, bool provi
 
 class AddPredicates : public IRGraphMutator {
     const Expr &cond;
-    bool calls;
-    bool provides;
+    const Function &func;
+    ApplySplitResult::Type type;
 
     using IRMutator::visit;
 
@@ -135,7 +135,13 @@ class AddPredicates : public IRGraphMutator {
         auto [args, changed_args] = mutate_with_changes(p->args);
         auto [values, changed_values] = mutate_with_changes(p->values);
         Expr predicate = mutate(p->predicate);
-        if (provides) {
+        if (type == ApplySplitResult::BlendProvides) {
+            int idx = 0;
+            for (Expr &v : values) {
+                v = select(cond, v, Call::make(func, args, idx++));
+            }
+            return Provide::make(p->name, values, args, predicate);
+        } else if (type == ApplySplitResult::PredicateProvides) {
             return Provide::make(p->name, values, args, predicate && cond);
         } else if (changed_args || changed_values || !predicate.same_as(p->predicate)) {
             return Provide::make(p->name, values, args, predicate);
@@ -146,20 +152,20 @@ class AddPredicates : public IRGraphMutator {
 
     Expr visit(const Call *op) override {
         Expr result = IRMutator::visit(op);
-        if (calls && op->call_type == Call::Halide) {
+        if (type == ApplySplitResult::PredicateCalls && op->call_type == Call::Halide) {
             result = Call::make(op->type, Call::if_then_else, {cond, result}, Call::PureIntrinsic);
         }
         return result;
     }
 
 public:
-    AddPredicates(const Expr &cond, bool calls, bool provides)
-        : cond(cond), calls(calls), provides(provides) {
+    AddPredicates(const Expr &cond, const Function &func, ApplySplitResult::Type type)
+        : cond(cond), func(func), type(type) {
     }
 };
 
-Stmt add_predicates(const Expr &cond, bool calls, bool provides, const Stmt &s) {
-    return AddPredicates(cond, calls, provides).mutate(s);
+Stmt add_predicates(const Expr &cond, const Function &func, ApplySplitResult::Type type, const Stmt &s) {
+    return AddPredicates(cond, func, type).mutate(s);
 }
 
 // Build a loop nest about a provide node using a schedule
@@ -227,10 +233,10 @@ Stmt build_loop_nest(
                 stmt = substitute_in(res.name, res.value, true, false, stmt);
             } else if (res.is_substitution_in_provides()) {
                 stmt = substitute_in(res.name, res.value, false, true, stmt);
-            } else if (res.is_predicate_calls()) {
-                stmt = add_predicates(res.value, true, false, stmt);
-            } else if (res.is_predicate_provides()) {
-                stmt = add_predicates(res.value, false, true, stmt);
+            } else if (res.is_blend_provides() ||
+                       res.is_predicate_calls() ||
+                       res.is_predicate_provides()) {
+                stmt = add_predicates(res.value, func, res.type, stmt);
             } else if (res.is_let()) {
                 stmt = LetStmt::make(res.name, res.value, stmt);
             } else {
@@ -2241,6 +2247,10 @@ bool validate_schedule(Function f, const Stmt &s, const Target &target, bool is_
             validate_schedule_inlined_function(f);
         }
         return true;
+    }
+
+    if (f.schedule().ring_buffer().defined() && store_at == hoist_storage_at) {
+        user_error << "Func \"" << f.name() << "\" is scheduled with ring_buffer(), but has matching store_at and hoist_storage levels. Add an explicit hoist_storage directive to the schedule to fix the issue.\n";
     }
 
     vector<ComputeLegalSchedules::Site> &sites = legal.sites_allowed;

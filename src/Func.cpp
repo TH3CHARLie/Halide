@@ -375,6 +375,79 @@ bool is_const_assignment(const string &func_name, const vector<Expr> &args, cons
              rhs_checker.has_self_reference ||
              rhs_checker.has_rvar);
 }
+
+void check_for_race_conditions_in_split_with_blend(const StageSchedule &sched) {
+    // Splits with a 'blend' tail strategy do a load and then a store of values
+    // outside of the region to be computed, so for each split using a 'blend'
+    // tail strategy, verify that there aren't any parallel vars that stem from
+    // the same original dimension, so that this load and store doesn't race
+    // with a true computation of that value happening in some other thread.
+
+    // Note that we only need to check vars in the same dimension, because
+    // allocation bounds inference is done per-dimension and allocates padding
+    // based on the values actually accessed by the lowered code (i.e. it covers
+    // the blend region). So for example, an access beyond the end of a scanline
+    // can't overflow onto the next scanline. Halide will allocate padding, or
+    // throw a bounds error if it's an input or output.
+
+    if (sched.allow_race_conditions()) {
+        return;
+    }
+
+    std::set<std::string> parallel;
+    for (const auto &dim : sched.dims()) {
+        if (is_unordered_parallel(dim.for_type)) {
+            parallel.insert(dim.var);
+        }
+    }
+
+    // Process the splits in reverse order to figure out which root vars have a
+    // parallel child.
+    for (auto it = sched.splits().rbegin(); it != sched.splits().rend(); it++) {
+        if (it->is_fuse()) {
+            if (parallel.count(it->old_var)) {
+                parallel.insert(it->inner);
+                parallel.insert(it->old_var);
+            }
+        } else if (it->is_rename() || it->is_purify()) {
+            if (parallel.count(it->outer)) {
+                parallel.insert(it->old_var);
+            }
+        } else {
+            if (parallel.count(it->inner) || parallel.count(it->outer)) {
+                parallel.insert(it->old_var);
+            }
+        }
+    }
+
+    // Now propagate back to all children of the identified root vars, to assert
+    // that none of them use a blending tail strategy.
+    for (auto it = sched.splits().begin(); it != sched.splits().end(); it++) {
+        if (it->is_fuse()) {
+            if (parallel.count(it->inner) || parallel.count(it->outer)) {
+                parallel.insert(it->old_var);
+            }
+        } else if (it->is_rename() || it->is_purify()) {
+            if (parallel.count(it->old_var)) {
+                parallel.insert(it->outer);
+            }
+        } else {
+            if (parallel.count(it->old_var)) {
+                parallel.insert(it->inner);
+                parallel.insert(it->old_var);
+                if (it->tail == TailStrategy::ShiftInwardsAndBlend ||
+                    it->tail == TailStrategy::RoundUpAndBlend) {
+                    user_error << "Tail strategy " << it->tail
+                               << " may not be used to split " << it->old_var
+                               << " because other vars stemming from the same original "
+                               << "Var or RVar are marked as parallel."
+                               << "This could cause a race condition.\n";
+                }
+            }
+        }
+    }
+}
+
 }  // namespace
 
 void Stage::set_dim_type(const VarOrRVar &var, ForType t) {
@@ -438,6 +511,10 @@ void Stage::set_dim_type(const VarOrRVar &var, ForType t) {
                    << " to mark as " << t
                    << " in vars for function\n"
                    << dump_argument_list();
+    }
+
+    if (is_unordered_parallel(t)) {
+        check_for_race_conditions_in_split_with_blend(definition.schedule());
     }
 }
 
@@ -1171,6 +1248,11 @@ void Stage::split(const string &old, const string &outer, const string &inner, c
         }
     }
 
+    if (tail == TailStrategy::ShiftInwardsAndBlend ||
+        tail == TailStrategy::RoundUpAndBlend) {
+        check_for_race_conditions_in_split_with_blend(definition.schedule());
+    }
+
     if (!definition.is_init()) {
         user_assert(tail != TailStrategy::ShiftInwards)
             << "When splitting Var " << old_name
@@ -1646,6 +1728,38 @@ Stage &Stage::partition(const VarOrRVar &var, Partition policy) {
         << ", could not find var " << var.name()
         << " to set loop partition policy.\n"
         << dump_argument_list();
+    return *this;
+}
+
+Stage &Stage::never_partition(const std::vector<VarOrRVar> &vars) {
+    for (const auto &v : vars) {
+        partition(v, Partition::Never);
+    }
+    return *this;
+}
+
+Stage &Stage::never_partition_all() {
+    definition.schedule().touched() = true;
+    vector<Dim> &dims = definition.schedule().dims();
+    for (auto &dim : dims) {
+        dim.partition_policy = Partition::Never;
+    }
+    return *this;
+}
+
+Stage &Stage::always_partition(const std::vector<VarOrRVar> &vars) {
+    for (const auto &v : vars) {
+        partition(v, Partition::Always);
+    }
+    return *this;
+}
+
+Stage &Stage::always_partition_all() {
+    definition.schedule().touched() = true;
+    vector<Dim> &dims = definition.schedule().dims();
+    for (auto &dim : dims) {
+        dim.partition_policy = Partition::Always;
+    }
     return *this;
 }
 
@@ -2284,6 +2398,12 @@ Func &Func::async() {
     return *this;
 }
 
+Func &Func::ring_buffer(Expr extent) {
+    invalidate_cache();
+    func.schedule().ring_buffer() = std::move(extent);
+    return *this;
+}
+
 Stage Func::specialize(const Expr &c) {
     invalidate_cache();
     return Stage(func, func.definition(), 0).specialize(c);
@@ -2339,6 +2459,30 @@ Func &Func::unroll(const VarOrRVar &var, const Expr &factor, TailStrategy tail) 
 Func &Func::partition(const VarOrRVar &var, Partition policy) {
     invalidate_cache();
     Stage(func, func.definition(), 0).partition(var, policy);
+    return *this;
+}
+
+Func &Func::never_partition(const std::vector<VarOrRVar> &vars) {
+    invalidate_cache();
+    Stage(func, func.definition(), 0).never_partition(vars);
+    return *this;
+}
+
+Func &Func::never_partition_all() {
+    invalidate_cache();
+    Stage(func, func.definition(), 0).never_partition_all();
+    return *this;
+}
+
+Func &Func::always_partition(const std::vector<VarOrRVar> &vars) {
+    invalidate_cache();
+    Stage(func, func.definition(), 0).always_partition(vars);
+    return *this;
+}
+
+Func &Func::always_partition_all() {
+    invalidate_cache();
+    Stage(func, func.definition(), 0).always_partition_all();
     return *this;
 }
 
