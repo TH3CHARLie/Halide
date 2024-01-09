@@ -140,6 +140,7 @@ set(HEADER_FILES
     runtime/HalideRuntime.h
     Schedule.h
     ScheduleFunctions.h
+    ScheduleMutator.h
     Scope.h
     SelectGPUAPI.h
     Serialization.h
@@ -303,6 +304,7 @@ set(SOURCE_FILES
     RemoveUndef.cpp
     Schedule.cpp
     ScheduleFunctions.cpp
+    ScheduleMutator.cpp
     SelectGPUAPI.cpp
     Serialization.cpp
     Simplify.cpp

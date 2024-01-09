@@ -1,12 +1,13 @@
 tests(GROUPS libfuzzer
       SOURCES
       fuzzer_valid.cpp
+      fuzzer_mutator.cpp
       )
 
 set(LIB_FUZZING_ENGINE "$ENV{LIB_FUZZING_ENGINE}"
     CACHE STRING "Compiler flags necessary to link the fuzzing engine of choice e.g. libfuzzer, afl etc.")
 
-foreach(fuzzer "libfuzzer_fuzzer_valid")
+foreach(fuzzer "libfuzzer_fuzzer_valid" "libfuzzer_fuzzer_mutator")
   target_link_libraries(${fuzzer} PRIVATE Halide::Halide)
 
   # Allow OSS-fuzz to manage flags directly

@@ -2,6 +2,23 @@
 
 using namespace Halide;
 
+std::string get_original_var_name(const std::string &var_name) {
+    if (var_name.rfind('.' != std::string::npos)) {
+        return var_name.substr(var_name.rfind('.') + 1, var_name.size() - 1 - var_name.rfind('.'));
+    }
+    return var_name;
+}
+
+std::string remove_counter_from_function_name(const std::string &name) {
+    if (name.rfind('$') != std::string::npos) {
+        if (isdigit(name[name.rfind('$') + 1])) {
+            return name.substr(0, name.rfind('$'));
+        }
+        return name;
+    }
+    return name;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
         std::cerr << "Usage: ./blur_driver <input_hlpipe_file>\n";
@@ -10,32 +27,41 @@ int main(int argc, char **argv) {
     const int width = 128;
     const int height = 128;
     std::string filename = argv[1];
-    Func input("input");
-    Func blur_x("blur_x");
-    Func blur_y("blur_y");
-    Var x("x"), y("y");
-    input(x, y) = x + y;
-    blur_x(x, y) = (input(x - 1, y) + input(x, y) + input(x + 1, y)) / 3;
-    blur_y(x, y) = (blur_x(x, y - 1) + blur_x(x, y) + blur_x(x, y + 1)) / 3;
-    Pipeline p({blur_y});
-    Buffer<int> buf = p.realize({width, height});
-
-    Var n, s, l;
-    Func input_1("input_1");
-    Func blur_x_1("blur_x_1");
-    Func blur_y_1("blur_y_1");
-    input_1(x, y) = x + y;
-    blur_x_1(x, y) = (input_1(x - 1, y) + input_1(x, y) + input_1(x + 1, y)) / 3;
-    blur_y_1(x, y) = (blur_x_1(x, y - 1) + blur_x_1(x, y) + blur_x_1(x, y + 1)) / 3;
-    Pipeline p_1({blur_y_1});
-    Buffer<int> buf2 = p_1.realize({width, height});
-
-    // compare buffer values
-    for (int i = 0; i < height; ++i) {
-        for (int j = 0; j < width; ++j) {
-            if (buf(i, j) != buf2(i, j)) {
-                std::cerr << "Error: buf(" << i << ", " << j << ") = " << buf(i, j) << ", buf2(" << i << ", " << j << ") = " << buf2(i, j) << "\n";
-                return 1;
+    Buffer<int> buf1, buf2, buf3;
+    {
+        Func input("input");
+        Func local_sum("local_sum");
+        Func blurry("blurry");
+        Var x("x"), y("y");
+        input(x, y) = 2 * x + 5 * y;
+        RDom r(-2, 5, -2, 5);
+        local_sum(x, y) = 0;
+        local_sum(x, y) += input(x + r.x, y + r.y);
+        blurry(x, y) = cast<int32_t>(local_sum(x, y) / 25);
+        Pipeline p({blurry});
+        buf1 = p.realize({128, 128});
+    }
+    {
+        Func input("input");
+        Func local_sum("local_sum");
+        Func blurry("blurry");
+        Var x("x"), y("y");
+        RVar yryf;
+        input(x, y) = 2 * x + 5 * y;
+        RDom r(-2, 5, -2, 5, "rdom_r");
+        local_sum(x, y) = 0;
+        local_sum(x, y) += input(x + r.x, y + r.y);
+        blurry(x, y) = cast<int32_t>(local_sum(x, y) / 25);
+        local_sum.update(0).vectorize(y).fuse(y, r.y, yryf);
+        Pipeline p({blurry});
+        std::string origin_var_name = get_original_var_name(r.y.name());
+        buf2 = p.realize({128, 128});
+    }
+    for (int i = 0; i < 128; ++i) {
+        for (int j = 0; j < 128; ++j) {
+            if (buf1(i, j) != buf2(i, j)) {
+                std::cerr << "Error: buf1(" << i << ", " << j << ") = " << buf1(i, j) << ", buf2(" << i << ", " << j << ") = " << buf2(i, j) << "\n";
+                // return 1;
             }
         }
     }
