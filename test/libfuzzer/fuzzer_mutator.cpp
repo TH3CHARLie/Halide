@@ -122,9 +122,14 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     Pipeline deserialized;
     try {
         deserialized = deserialize_pipeline(data_copy, params);
-        deserialized.compile_to_module({}, "blurry", get_host_target());
+        if (!deserialized.defined()) {
+            std::cerr << "skip undefined pipeline\n";
+            return 0;
+        }
         std::string code = schedule_code(deserialized);
         out << code;
+        out.flush();
+        deserialized.compile_to_module({}, "blurry", get_host_target());
         std::string hlpipe_file = output_dir + "/blurry_" + std::to_string(counter) + ".hlpipe";
         serialize_pipeline(deserialized, hlpipe_file);
     } catch (const CompileError &e) {
@@ -147,28 +152,26 @@ static int mutate_counter = 0;
 extern "C" size_t LLVMFuzzerCustomMutator(uint8_t *data, size_t size,
                                           size_t max_size, unsigned int seed) {
     // Mutate data in place. Return the new size.
-    std::cout << "size " << size << " max_size " << max_size << "\n";
     std::vector<uint8_t> data_copy(data, data + size);
     std::map<std::string, Parameter> params;
     Pipeline deserialized;
     try {
         deserialized = deserialize_pipeline(data_copy, params);
+        // mutate the deserialized pipeline
+        ScheduleMutator mutator(deserialized, seed);
+        Pipeline mutated = mutator.mutate();
+        std::vector<uint8_t> serialized;
+        serialize_pipeline(mutated, serialized);
+        // serialize the mutated pipeline
+        mutate_counter++;
+        std::memcpy(data, serialized.data(), serialized.size());
+        return serialized.size();
     } catch (const CompileError &e) {
-        // user error means invalid input, so we just return 0
+        // user error means we mutate into some invalid inputs, so we just abort
         return 0;
     } catch (const InternalError &e) {
         // we really shouldn't hitting any internal errors here, but if we do, we just return 0
-        std::cerr << "InternalError during deserialization: " << e.what() << std::endl;
+        std::cerr << "InternalError during mutation: " << e.what() << std::endl;
         return 0;
     }
-    // mutate the deserialized pipeline
-    ScheduleMutator mutator(deserialized, seed);
-    Pipeline mutated = mutator.mutate();
-    std::vector<uint8_t> serialized;
-    serialize_pipeline(mutated, serialized);
-    std::cout << "serialized size " << serialized.size() << "\n";
-    // serialize the mutated pipeline
-    mutate_counter++;
-    std::memcpy(data, serialized.data(), serialized.size());
-    return serialized.size();
 }
