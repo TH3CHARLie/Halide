@@ -19,6 +19,50 @@ TailStrategy ScheduleMutator::random_tail_strategy() {
     return static_cast<TailStrategy>(tail_strategy_idx);
 }
 
+// The available for types are: Serial = 0, Parallel = 1, Vectorized = 2, Unrolled = 3
+Internal::ForType ScheduleMutator::random_for_type() {
+    std::uniform_int_distribution<int> for_type_dist(0, 3);
+    int for_type_idx = for_type_dist(rng);
+    return static_cast<Internal::ForType>(for_type_idx);
+}
+
+bool ScheduleMutator::is_vectorizable(const std::string &var, Internal::Function &function, Internal::Definition &definition, int stage_idx) {
+    Internal::StageSchedule &schedule = definition.schedule();
+    std::vector<Internal::Split> &splits = schedule.splits();
+    if (splits.size() == 0) {
+        return false;
+    }
+    std::vector<std::string> const_factor_vars;
+    for (int idx = 0; idx < splits.size(); ++idx) {
+        auto &split = splits[idx];
+        if (split.split_type == Internal::Split::SplitType::SplitVar) {
+            if (std::find(const_factor_vars.begin(), const_factor_vars.end(), split.old_var) != const_factor_vars.end()) {
+                if (Internal::is_const(split.factor)) {
+                    if (split.inner == var || split.outer == var) {
+                        return true;
+                    } else {
+                        const_factor_vars.push_back(split.inner);
+                        const_factor_vars.push_back(split.outer);
+                    }
+                }
+            } else {
+                if (Internal::is_const(split.factor)) {
+                    if (split.inner == var) {
+                        return true;
+                    } else {
+                        const_factor_vars.push_back(split.inner);
+                    }
+                }
+            }
+        } else if (split.split_type == Internal::Split::SplitType::FuseVars) {
+            if (split.old_var == var) {
+                return is_vectorizable(split.inner, function, definition, stage_idx) && is_vectorizable(split.outer, function, definition, stage_idx);
+            }
+        }
+    }
+    return false;
+}
+
 std::string get_original_var_name(const std::string &var_name) {
     if (var_name.rfind('.' != std::string::npos)) {
         return var_name.substr(var_name.rfind('.') + 1, var_name.size() - 1 - var_name.rfind('.'));
@@ -74,15 +118,13 @@ enum class LoopScheduleMutationType {
     AddNewRename,
     AddNewFuse,
     // RemoveSplit,
-    // MutateExistingDim,
-    // AddNewParallelDim,
-    // AddNewVectorizeDim,
-    // ShuffleDims
+    ChangexistingDim,
+    ReorderDims,
 };
 
 void ScheduleMutator::mutate_loop_schedule(Internal::Function &function, Internal::Definition &definition, int stage_idx) {
     // randomly choose a mutation type
-    std::uniform_int_distribution<int> mutation_type_dist(0, 4);
+    std::uniform_int_distribution<int> mutation_type_dist(0, 6);
     LoopScheduleMutationType mutation_type = static_cast<LoopScheduleMutationType>(mutation_type_dist(rng));
     switch (mutation_type) {
         case LoopScheduleMutationType::DoNothing:
@@ -101,26 +143,16 @@ void ScheduleMutator::mutate_loop_schedule(Internal::Function &function, Interna
             mutate_add_new_fuse(function, definition, stage_idx);
             break;
         // case LoopScheduleMutationType::RemoveSplit:
-        //     mutate_remove_split(schedule);
+        //     mutate_remove_split(function, definition, stage_idx);
         //     break;
-        // case LoopScheduleMutationType::MutateExistingDim:
-        //     // std::cout << "mutate existing dim\n";
-        //     mutate_existing_dim(schedule);
-        //     break;
-        // case LoopScheduleMutationType::AddNewParallelDim:
-        //     // std::cout << "add new parallel dim\n";
-        //     add_new_parallel_dim(schedule);
-        //     break;
-        // case LoopScheduleMutationType::AddNewVectorizeDim:
-        //     // std::cout << "add new vectorize dim\n";
-        //     add_new_vectorize_dim(schedule);
-        //     break;
-        // case LoopScheduleMutationType::ShuffleDims:
-        //     // std::cout << "shuffle dims\n";
-        //     shuffle_dims(schedule);
-        //     break;
-        // default:
-        //     break;
+        case LoopScheduleMutationType::ChangexistingDim:
+            mutate_change_existing_dim(function, definition, stage_idx);
+            break;
+        case LoopScheduleMutationType::ReorderDims:
+            mutate_reorder_dims(function, definition, stage_idx);
+            break;
+        default:
+            break;
     }
 }
 
@@ -185,4 +217,57 @@ void ScheduleMutator::mutate_add_new_fuse(Internal::Function &function, Internal
     stage.fuse(Var(inner_var_name), Var(outer_var_name), Var(inner_var_name + "f" + outer_var_name));
 }
 
+
+// TODO: we probably can just remove the last split from the split list, and update dim list accordingly.
+//       but this is essentially equal to not doing a mutate_add_new_split so there's not much point in doing this
+//       unless we do deletion in a more random way (something in the middle of a split-chain)
+
+
+// void ScheduleMutator::mutate_remove_split(Internal::Function &f, Internal::Definition &d, int stage_idx) {
+    // Internal::StageSchedule &schedule = d.schedule();
+    // std::vector<Internal::Split> &splits = schedule.splits();
+    // for simplicity we only remove the last
+    // if (splits.size() == 0) {
+    //     return;
+    // }
+    // // randomly choose a split to mutate
+    // std::uniform_int_distribution<int> split_idx_dist(0, splits.size() - 1);
+    // int split_idx = split_idx_dist(rng);
+    // splits.erase(splits.begin() + split_idx);
+// }
+
+void ScheduleMutator::mutate_change_existing_dim(Internal::Function &function, Internal::Definition &definition, int stage_idx) {
+    Internal::StageSchedule &schedule = definition.schedule();
+    std::vector<Internal::Dim> &dims = schedule.dims();
+    if (dims.size() == 0) {
+        return;
+    }
+    std::uniform_int_distribution<int> dim_idx_dist(0, dims.size() - 1);
+    int dim_idx = dim_idx_dist(rng);
+    Internal::Dim &dim = dims[dim_idx];
+    if (dim.var == Var::outermost().name()) {
+        return;
+    }
+    // TODO: we want to suppress some Can only vectorize/unroll for loops over a constant extent errors
+    Internal::ForType for_type = random_for_type();
+    if (for_type == Internal::ForType::Vectorized || for_type == Internal::ForType::Unrolled) {
+        if (is_vectorizable(dim.var, function, definition, stage_idx)) {
+            dim.for_type = for_type;
+        }
+    } else {
+        dim.for_type = random_for_type();
+    }
 }
+
+void ScheduleMutator::mutate_reorder_dims(Internal::Function &function, Internal::Definition &definition, int stage_idx) {
+    Internal::StageSchedule &schedule = definition.schedule();
+    std::vector<Internal::Dim> &dims = schedule.dims();
+    // if the stage only has 1 dim other than __outermost, we don't shuffle it
+    if (dims.size() <= 2) {
+        return;
+    }
+    std::shuffle(dims.begin(), dims.end() - 1, rng);
+}
+
+}
+

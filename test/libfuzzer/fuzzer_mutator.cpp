@@ -13,6 +13,13 @@ using namespace Halide;
 static int counter = 0;
 static int internal_error_counter = 0;
 
+std::string get_original_var_name(const std::string &var_name) {
+    if (var_name.rfind('.' != std::string::npos)) {
+        return var_name.substr(var_name.rfind('.') + 1, var_name.size() - 1 - var_name.rfind('.'));
+    }
+    return var_name;
+}
+
 std::string tail_strategy_code(TailStrategy strategy) {
     switch (strategy) {
         case TailStrategy::RoundUp:
@@ -46,13 +53,16 @@ std::string stage_schedule_code(const Internal::StageSchedule &stage_schedule, s
     ss << func_name << ".";
     for (int split_idx = 0; split_idx < splits.size(); ++split_idx) {
         auto split_type = splits[split_idx].split_type;
+        std::string old_var = get_original_var_name(splits[split_idx].old_var);
+        std::string outer = get_original_var_name(splits[split_idx].outer);
+        std::string inner = get_original_var_name(splits[split_idx].inner);
         if (split_type == Internal::Split::SplitType::SplitVar) {
-            ss << "split(" << splits[split_idx].old_var << ", " << splits[split_idx].outer << ", " << splits[split_idx].inner << ", " << splits[split_idx].factor << ", " << tail_strategy_code(splits[split_idx].tail) << ")";
+            ss << "split(" << old_var << ", " << outer << ", " << inner << ", " << splits[split_idx].factor << ", " << tail_strategy_code(splits[split_idx].tail) << ")";
         }
         else if (split_type == Internal::Split::SplitType::RenameVar) {
-            ss << "rename(" << splits[split_idx].old_var << ", " << splits[split_idx].outer << ")";
+            ss << "rename(" << old_var << ", " << outer << ")";
         } else if (split_type == Internal::Split::SplitType::FuseVars) {
-            ss << "fuse(" << splits[split_idx].inner << ", " << splits[split_idx].outer << ", " << splits[split_idx].old_var << ")";
+            ss << "fuse(" << inner << ", " << outer << ", " << old_var << ")";
         }
         if (split_idx != splits.size() - 1) {
             ss << ".";
@@ -66,7 +76,7 @@ std::string stage_schedule_code(const Internal::StageSchedule &stage_schedule, s
     ss << ".reorder(";
     for (int dim_idx = 0; dim_idx < dims.size(); ++dim_idx) {
         if (dims[dim_idx].var != "__outermost") {
-            ss << dims[dim_idx].var;
+            ss << get_original_var_name(dims[dim_idx].var);
             if (dim_idx != dims.size() - 2) {
                 ss << ", ";
             }

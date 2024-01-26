@@ -28,11 +28,17 @@ private:
 
     // void mutate_remove_split(Internal::Function &f, Internal::Definition &d, int stage_idx);
 
+    void mutate_change_existing_dim(Internal::Function &f, Internal::Definition &d, int stage_idx);
+
+    void mutate_reorder_dims(Internal::Function &f, Internal::Definition &d, int stage_idx);
+
+    bool is_vectorizable(const std::string &var, Internal::Function &f, Internal::Definition &d, int stage_idx);
+
     int random_split_factor();
 
     TailStrategy random_tail_strategy();
 
-    TailStrategy random_rvar_tail_strategy();
+    Internal::ForType random_for_type();
 
     Pipeline p;
 
