@@ -34,11 +34,15 @@ private:
 
     bool is_vectorizable(const std::string &var, Internal::Function &f, Internal::Definition &d, int stage_idx);
 
+    bool is_function_inlined(Internal::Function &f, Internal::Definition &d, int stage_idx);
+
     int random_split_factor();
 
     TailStrategy random_tail_strategy();
 
     Internal::ForType random_for_type();
+
+    bool is_input_func(const Internal::Function &f) const;
 
     Pipeline p;
 

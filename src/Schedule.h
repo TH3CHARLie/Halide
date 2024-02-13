@@ -245,6 +245,9 @@ public:
     // Lock this LoopLevel.
     LoopLevel &lock();
 
+    // Unlock this LoopLevel. NOTE: this is a fuzzing-only functionality, added by Xuanda.
+    LoopLevel &unlock();
+
     // Return the Func name. Asserts if the LoopLevel is_root() or is_inlined() or !defined().
     std::string func() const;
 

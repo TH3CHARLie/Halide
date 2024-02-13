@@ -63,6 +63,22 @@ bool ScheduleMutator::is_vectorizable(const std::string &var, Internal::Function
     return false;
 }
 
+bool ScheduleMutator::is_function_inlined(Internal::Function &function, Internal::Definition &definition, int stage_idx) {
+    const Internal::FuncSchedule &func_schedule = function.schedule();
+    LoopLevel compute_level = func_schedule.compute_level();
+    if (func_schedule.compute_level().is_inlined()) {
+        return true;
+    }
+    return false;
+}
+
+bool ScheduleMutator::is_input_func(const Internal::Function &f) const {
+    if (const Internal::Call *call = f.is_wrapper()) {
+        return call->call_type == Internal::Call::Image;
+    }
+    return false;
+}
+
 std::string get_original_var_name(const std::string &var_name) {
     if (var_name.rfind('.' != std::string::npos)) {
         return var_name.substr(var_name.rfind('.') + 1, var_name.size() - 1 - var_name.rfind('.'));
@@ -85,29 +101,23 @@ std::vector<VarOrRVar> get_stage_vars_or_rvars(const Stage &stage) {
     return vars;
 }
 
-Pipeline ScheduleMutator::mutate() {
-    std::vector<Internal::Function> outputs;
-    for (const auto &f : p.outputs()) {
-        outputs.push_back(f.function());
-    }
-    std::map<std::string, Internal::Function> env = build_environment(outputs);
-    std::vector<std::string> order = topological_order(outputs, env);
-    for (int i = 0; i < order.size(); i++) {
-        mutate_function_schedule(env[order[i]]);
-    }
-    return this->p;
-}
-
 void ScheduleMutator::mutate_function_schedule(Internal::Function &function) {
-    for (int s = 0; s <= (int)function.updates().size(); ++s) {
-        if (s == 0) {
-            // Mutate the pure definition
-            mutate_loop_schedule(function, function.definition(), 0);
-            // mutate_compute_schedule(function.definition().schedule());
-        } else {
-            // Mutate the update definition
-            mutate_loop_schedule(function, function.update(s - 1), s);
+    // randomize a boolean, we only do one of the two mutations: loop schedule or compute schedule
+    std::uniform_int_distribution<int> bool_dist(0, 1);
+    bool is_loop_schedule = bool_dist(rng);
+    if (is_loop_schedule) {
+        for (int s = 0; s <= (int)function.updates().size(); ++s) {
+            if (s == 0) {
+                // Mutate the pure definition
+                mutate_loop_schedule(function, function.definition(), 0);
+                // mutate_compute_schedule(function.definition().schedule());
+            } else {
+                // Mutate the update definition
+                mutate_loop_schedule(function, function.update(s - 1), s);
+            }
         }
+    } else {
+        // mutate_compute_schedule(function.schedule());
     }
 }
 
@@ -123,6 +133,10 @@ enum class LoopScheduleMutationType {
 };
 
 void ScheduleMutator::mutate_loop_schedule(Internal::Function &function, Internal::Definition &definition, int stage_idx) {
+    // we don't attempt to mutate input functions
+    if (is_input_func(function)) {
+        return;
+    }
     // randomly choose a mutation type
     std::uniform_int_distribution<int> mutation_type_dist(0, 6);
     LoopScheduleMutationType mutation_type = static_cast<LoopScheduleMutationType>(mutation_type_dist(rng));
@@ -215,6 +229,8 @@ void ScheduleMutator::mutate_add_new_fuse(Internal::Function &function, Internal
     std::string outer_var_name = get_original_var_name(outer_var.name());
     // TODO: how to do with Rvars?
     stage.fuse(Var(inner_var_name), Var(outer_var_name), Var(inner_var_name + "f" + outer_var_name));
+    // whenever we create a new fused var, we mark the new var as serial.
+    stage.serial(Var(inner_var_name + "f" + outer_var_name));
 }
 
 
@@ -237,6 +253,16 @@ void ScheduleMutator::mutate_add_new_fuse(Internal::Function &function, Internal
 // }
 
 void ScheduleMutator::mutate_change_existing_dim(Internal::Function &function, Internal::Definition &definition, int stage_idx) {
+    bool is_inlined = false;
+    function.schedule().compute_level().lock();
+    is_inlined = function.schedule().compute_level().is_inlined();
+    function.schedule().compute_level().unlock();
+    // if the function is inlined, we don't mutate the dim
+    if (is_inlined) {
+        return;
+    }
+
+
     Internal::StageSchedule &schedule = definition.schedule();
     std::vector<Internal::Dim> &dims = schedule.dims();
     if (dims.size() == 0) {
@@ -268,6 +294,23 @@ void ScheduleMutator::mutate_reorder_dims(Internal::Function &function, Internal
     }
     std::shuffle(dims.begin(), dims.end() - 1, rng);
 }
+
+
+// Top-level entry point
+Pipeline ScheduleMutator::mutate() {
+    std::vector<Internal::Function> outputs;
+    for (const auto &f : p.outputs()) {
+        outputs.push_back(f.function());
+    }
+    std::map<std::string, Internal::Function> env = build_environment(outputs);
+    std::vector<std::string> order = topological_order(outputs, env);
+    for (int i = 0; i < order.size(); i++) {
+        mutate_function_schedule(env[order[i]]);
+    }
+    return this->p;
+}
+
+
 
 }
 

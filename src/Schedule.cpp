@@ -121,6 +121,11 @@ LoopLevel &LoopLevel::lock() {
     return *this;
 }
 
+LoopLevel &LoopLevel::unlock() {
+    contents->locked = false;
+    return *this;
+}
+
 bool LoopLevel::defined() const {
     check_locked();
     return contents->var_name != undefined_looplevel_name;
