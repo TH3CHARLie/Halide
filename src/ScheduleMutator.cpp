@@ -3,6 +3,7 @@
 #include "RealizationOrder.h"
 #include "Func.h"
 #include "Function.h"
+#include <set>
 
 namespace Halide {
 int ScheduleMutator::random_split_factor() {
@@ -180,7 +181,19 @@ void ScheduleMutator::mutate_change_existing_split(Internal::Function &function,
     std::uniform_int_distribution<int> split_idx_dist(0, splits.size() - 1);
     int split_idx = split_idx_dist(rng);
     splits[split_idx].factor = random_split_factor();
-    splits[split_idx].tail = random_tail_strategy();
+    // we need to check if the new tail strategy is of type PredicateStores or PredicateLoads
+    // if so, we need to make sure that the inner var is not already in the split list
+    TailStrategy tail_strategy = random_tail_strategy();
+    if (tail_strategy == TailStrategy::PredicateStores || tail_strategy == TailStrategy::PredicateLoads) {
+        std::set<std::string> predicated_vars;
+        predicated_vars.insert(splits[split_idx].inner);
+        for (auto &split : splits) {
+            if (predicated_vars.count(split.old_var) != 0) {
+                return;
+            }
+        }
+    }
+    splits[split_idx].tail = tail_strategy;
 }
 
 void ScheduleMutator::mutate_add_new_split(Internal::Function &function, Internal::Definition &definition, int stage_idx) {
@@ -189,6 +202,17 @@ void ScheduleMutator::mutate_add_new_split(Internal::Function &function, Interna
     std::uniform_int_distribution<int> var_dist(0, vars.size() - 1);
     int var_idx = var_dist(rng);
     VarOrRVar var_picked = vars[var_idx];
+    // we need to check if the var is from a split of PredicateStores or PredicateLoads
+    std::set<std::string> predicated_vars;
+    auto splits = definition.schedule().splits();
+    for (auto &split : splits) {
+        if (split.tail == TailStrategy::PredicateStores || split.tail == TailStrategy::PredicateLoads) {
+            predicated_vars.insert(split.inner);
+        }
+    }
+    if (predicated_vars.count(var_picked.name()) != 0) {
+        return;
+    }
     int split_factor = random_split_factor();
     TailStrategy tail_strategy = random_tail_strategy();
     std::string var_name = get_original_var_name(var_picked.name());
@@ -281,7 +305,7 @@ void ScheduleMutator::mutate_change_existing_dim(Internal::Function &function, I
             dim.for_type = for_type;
         }
     } else {
-        dim.for_type = random_for_type();
+        dim.for_type = for_type;
     }
 }
 

@@ -89,6 +89,8 @@ std::string stage_schedule_code(const Internal::StageSchedule &stage_schedule, s
             ss << ".parallel(" << dims[dim_idx].var << ")";
         } else if (dims[dim_idx].for_type == Internal::ForType::Vectorized) {
             ss << ".vectorize(" << dims[dim_idx].var << ")";
+        } else if (dims[dim_idx].for_type == Internal::ForType::Unrolled) {
+            ss << ".unroll(" << dims[dim_idx].var << ")";
         }
     }
     return ss.str();
@@ -139,8 +141,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         std::string code = schedule_code(deserialized);
         out << code;
         out.flush();
-        deserialized.compile_to_module({}, "blurry", get_host_target());
-        std::string hlpipe_file = output_dir + "/blurry_" + std::to_string(counter) + ".hlpipe";
+        ImageParam input(Float(32), 2, "input");
+        deserialized.compile_to_module({input}, "bilateral_grid", get_host_target());
+        std::string hlpipe_file = output_dir + "/bilateral_grid_" + std::to_string(counter) + ".hlpipe";
         serialize_pipeline(deserialized, hlpipe_file);
     } catch (const CompileError &e) {
         out << "\nUser Error: " << e.what() << "\n";
