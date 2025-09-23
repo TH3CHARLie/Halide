@@ -14,7 +14,7 @@ public:
 
 private:
 
-    void mutate_function_schedule(Internal::Function &f);
+    void mutate_function_schedule(Internal::Function &f, bool is_output_func);
 
     void mutate_loop_schedule(Internal::Function &f, Internal::Definition &d, int stage_idx);
 
@@ -31,6 +31,8 @@ private:
     void mutate_change_existing_dim(Internal::Function &f, Internal::Definition &d, int stage_idx);
 
     void mutate_reorder_dims(Internal::Function &f, Internal::Definition &d, int stage_idx);
+
+    void mutate_compute_schedule(Internal::Function &f, bool is_output_func);
 
     bool is_vectorizable(const std::string &var, Internal::Function &f, Internal::Definition &d, int stage_idx);
 

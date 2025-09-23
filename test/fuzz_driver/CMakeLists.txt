@@ -5,5 +5,7 @@ tests(GROUPS fuzz_driver
       standalone.cpp
       driver.cpp
       load_unique.cpp
-      fuzzer_random.cpp)
+      fuzzer_random.cpp
+      gen_corpus_bilateral.cpp
+      bidriver.cpp)
 

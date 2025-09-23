@@ -102,7 +102,7 @@ std::vector<VarOrRVar> get_stage_vars_or_rvars(const Stage &stage) {
     return vars;
 }
 
-void ScheduleMutator::mutate_function_schedule(Internal::Function &function) {
+void ScheduleMutator::mutate_function_schedule(Internal::Function &function, bool is_output_func) {
     // randomize a boolean, we only do one of the two mutations: loop schedule or compute schedule
     std::uniform_int_distribution<int> bool_dist(0, 1);
     bool is_loop_schedule = bool_dist(rng);
@@ -111,20 +111,19 @@ void ScheduleMutator::mutate_function_schedule(Internal::Function &function) {
             if (s == 0) {
                 // Mutate the pure definition
                 mutate_loop_schedule(function, function.definition(), 0);
-                // mutate_compute_schedule(function.definition().schedule());
             } else {
                 // Mutate the update definition
                 mutate_loop_schedule(function, function.update(s - 1), s);
             }
         }
     } else {
-        // mutate_compute_schedule(function.schedule());
+        mutate_compute_schedule(function, is_output_func);
     }
 }
 
 enum class LoopScheduleMutationType {
     DoNothing,
-    ChangeExistingSplit,
+    // ChangeExistingSplit,
     AddNewSplit,
     AddNewRename,
     AddNewFuse,
@@ -139,15 +138,16 @@ void ScheduleMutator::mutate_loop_schedule(Internal::Function &function, Interna
         return;
     }
     // randomly choose a mutation type
-    std::uniform_int_distribution<int> mutation_type_dist(0, 6);
+    std::uniform_int_distribution<int> mutation_type_dist(0, 5);
     LoopScheduleMutationType mutation_type = static_cast<LoopScheduleMutationType>(mutation_type_dist(rng));
     switch (mutation_type) {
         case LoopScheduleMutationType::DoNothing:
             // actually do nothing, skip
             break;
-        case LoopScheduleMutationType::ChangeExistingSplit:
-            mutate_change_existing_split(function, definition, stage_idx);
-            break;
+        // TODO: disable this for now
+        // case LoopScheduleMutationType::ChangeExistingSplit:
+        //     mutate_change_existing_split(function, definition, stage_idx);
+        //     break;
         case LoopScheduleMutationType::AddNewSplit:
             mutate_add_new_split(function, definition, stage_idx);
             break;
@@ -193,6 +193,17 @@ void ScheduleMutator::mutate_change_existing_split(Internal::Function &function,
             }
         }
     }
+    // we also need to make sure that when we change the tail strategy to PredicateStores or PredicateLoads, the var we are spliting is not some other
+    // split's inner var
+    if (tail_strategy == TailStrategy::PredicateStores || tail_strategy == TailStrategy::PredicateLoads) {
+        std::set<std::string> inner_vars;
+        for (int i = 0; i < split_idx; ++i) {
+            inner_vars.insert(splits[i].inner);
+        }
+        if (inner_vars.count(splits[split_idx].old_var) != 0) {
+            return;
+        }
+    }
     splits[split_idx].tail = tail_strategy;
 }
 
@@ -215,6 +226,16 @@ void ScheduleMutator::mutate_add_new_split(Internal::Function &function, Interna
     }
     int split_factor = random_split_factor();
     TailStrategy tail_strategy = random_tail_strategy();
+    // similar to the above mutate case, make sure we are not spliting inner var of some other split using PredicateStores or PredicateLoads
+    if (tail_strategy == TailStrategy::PredicateStores || tail_strategy == TailStrategy::PredicateLoads) {
+        std::set<std::string> inner_vars;
+        for (auto &split : splits) {
+            inner_vars.insert(split.inner);
+        }
+        if (inner_vars.count(var_picked.name()) != 0) {
+            return;
+        }
+    }
     std::string var_name = get_original_var_name(var_picked.name());
     if (var_picked.is_rvar) {
         stage.split(RVar(var_name), RVar(var_name + "o"), RVar(var_name + "i"), split_factor, tail_strategy);
@@ -257,23 +278,72 @@ void ScheduleMutator::mutate_add_new_fuse(Internal::Function &function, Internal
     stage.serial(Var(inner_var_name + "f" + outer_var_name));
 }
 
+// void ScheduleMutator::mutate_remove_split(Internal::Function &function, Internal::Definition &definition, int stage_idx) {
+//     Stage stage(function, definition, stage_idx);
+//     std::vector<Internal::Split> splits = definition.schedule().splits();
+//     if (splits.size() == 0) {
+//         return;
+//     }
+//     std::uniform_int_distribution<int> split_idx_dist(0, splits.size() - 1);
+//     int split_idx = split_idx_dist(rng);
+//     Internal::Split split = splits[split_idx];
+//     std::set<std::string> removed_vars;
 
-// TODO: we probably can just remove the last split from the split list, and update dim list accordingly.
-//       but this is essentially equal to not doing a mutate_add_new_split so there's not much point in doing this
-//       unless we do deletion in a more random way (something in the middle of a split-chain)
+//     auto add_to_removed_vars = [&removed_vars](const Internal::Split &split) {
+//         if (split.split_type == Internal::Split::SplitType::SplitVar) {
+//             removed_vars.insert(split.inner);
+//             removed_vars.insert(split.outer);
+//         } else if (split.split_type == Internal::Split::SplitType::FuseVars) {
+//             removed_vars.insert(split.old_var);
+//         } else if (split.split_type == Internal::Split::SplitType::RenameVar) {
+//             removed_vars.insert(split.outer);
+//         }
+//     };
 
+//     auto need_remove = [&removed_vars](const Internal::Split &split) {
+//         if (split.split_type == Internal::Split::SplitType::SplitVar) {
+//             return removed_vars.count(split.old_var) != 0;
+//         } else if (split.split_type == Internal::Split::SplitType::FuseVars) {
+//             return removed_vars.count(split.inner) != 0 || removed_vars.count(split.outer) != 0;
+//         } else if (split.split_type == Internal::Split::SplitType::RenameVar) {
+//             return removed_vars.count(split.old_var) != 0;
+//         }
+//         return false;
+//     };
 
-// void ScheduleMutator::mutate_remove_split(Internal::Function &f, Internal::Definition &d, int stage_idx) {
-    // Internal::StageSchedule &schedule = d.schedule();
-    // std::vector<Internal::Split> &splits = schedule.splits();
-    // for simplicity we only remove the last
-    // if (splits.size() == 0) {
-    //     return;
-    // }
-    // // randomly choose a split to mutate
-    // std::uniform_int_distribution<int> split_idx_dist(0, splits.size() - 1);
-    // int split_idx = split_idx_dist(rng);
-    // splits.erase(splits.begin() + split_idx);
+//     add_to_removed_vars(split);
+//     std::vector<int> removed_split_idxs;
+//     removed_split_idxs.push_back(split_idx);
+//     for (int idx = 0; idx < splits.size(); ++idx) {
+//         if (idx != split_idx && need_remove(splits[idx])) {
+//             add_to_removed_vars(splits[idx]);
+//             removed_split_idxs.push_back(idx);
+//         }
+//     }
+//     std::vector<int> removed_dim_idxs;
+//     std::vector<Internal::Dim> dims = definition.schedule().dims();
+//     for (int idx = 0; idx < dims.size(); ++idx) {
+//         if (dims[idx].var != Var::outermost().name()) {
+//             if (removed_vars.count(dims[idx].var) != 0) {
+//                 removed_dim_idxs.push_back(idx);
+//             }
+//         }
+//     }
+//     std::vector<Internal::Split> new_splits;
+//     for (int idx = 0; idx < splits.size(); ++idx) {
+//         if (std::find(removed_split_idxs.begin(), removed_split_idxs.end(), idx) == removed_split_idxs.end()) {
+//             new_splits.push_back(splits[idx]);
+//         }
+//     }
+//     definition.schedule().splits() = new_splits;
+//     std::vector<Internal::Dim> new_dims;
+//     for (int idx = 0; idx < dims.size(); ++idx) {
+//         if (std::find(removed_dim_idxs.begin(), removed_dim_idxs.end(), idx) == removed_dim_idxs.end()) {
+//             new_dims.push_back(dims[idx]);
+//         }
+//     }
+//     definition.schedule().dims() = new_dims;
+//     return;
 // }
 
 void ScheduleMutator::mutate_change_existing_dim(Internal::Function &function, Internal::Definition &definition, int stage_idx) {
@@ -285,8 +355,7 @@ void ScheduleMutator::mutate_change_existing_dim(Internal::Function &function, I
     if (is_inlined) {
         return;
     }
-
-
+    Stage stage(function, definition, stage_idx);
     Internal::StageSchedule &schedule = definition.schedule();
     std::vector<Internal::Dim> &dims = schedule.dims();
     if (dims.size() == 0) {
@@ -295,17 +364,26 @@ void ScheduleMutator::mutate_change_existing_dim(Internal::Function &function, I
     std::uniform_int_distribution<int> dim_idx_dist(0, dims.size() - 1);
     int dim_idx = dim_idx_dist(rng);
     Internal::Dim &dim = dims[dim_idx];
-    if (dim.var == Var::outermost().name()) {
+    // we don't mutate the outermost dim and rvars
+    if (dim.var == Var::outermost().name() || dim.is_rvar()) {
         return;
     }
-    // TODO: we want to suppress some Can only vectorize/unroll for loops over a constant extent errors
     Internal::ForType for_type = random_for_type();
+    // TODO: we want to suppress some Can only vectorize/unroll for loops over a constant extent errors
     if (for_type == Internal::ForType::Vectorized || for_type == Internal::ForType::Unrolled) {
         if (is_vectorizable(dim.var, function, definition, stage_idx)) {
-            dim.for_type = for_type;
+            if (for_type == Internal::ForType::Vectorized) {
+                stage.vectorize(Var(dim.var));
+            } else {
+                stage.unroll(Var(dim.var));
+            }
         }
     } else {
-        dim.for_type = for_type;
+        if (for_type == Internal::ForType::Parallel) {
+            stage.parallel(Var(dim.var));
+        } else {
+            stage.serial(Var(dim.var));
+        }
     }
 }
 
@@ -320,21 +398,63 @@ void ScheduleMutator::mutate_reorder_dims(Internal::Function &function, Internal
 }
 
 
+enum class ComputeScheduleMutationType {
+    DoNothing,
+    ComputeRoot,
+    ComputeAt,
+    ComputeInline
+};
+
+void ScheduleMutator::mutate_compute_schedule(Internal::Function &function, bool is_output_func) {
+    // output function should always be compute_root;
+    if (is_output_func) {
+        return;
+    }
+    if (is_input_func(function)) {
+        return;
+    }
+    // randomly choose a mutation type
+    std::uniform_int_distribution<int> mutation_type_dist(0, 3);
+    ComputeScheduleMutationType mutation_type = static_cast<ComputeScheduleMutationType>(mutation_type_dist(rng));
+    if (mutation_type == ComputeScheduleMutationType::DoNothing) {
+        return;
+    } else if (mutation_type == ComputeScheduleMutationType::ComputeRoot) {
+        Func(function).compute_root();
+    } else if (mutation_type == ComputeScheduleMutationType::ComputeAt) {
+        Func(function).compute_root();
+        return;
+    } else if (mutation_type == ComputeScheduleMutationType::ComputeInline) {
+        // we check if any of the dims are parallelized or vectorized, if so, we don't inline
+        bool can_inline = true;
+        auto dims = function.definition().schedule().dims();
+        for (const auto &d: dims) {
+            if (d.for_type == Internal::ForType::Parallel || d.for_type == Internal::ForType::Vectorized || d.for_type == Internal::ForType::Unrolled) {
+                can_inline = false;
+                break;
+            }
+        }
+        if (can_inline) {
+            Func(function).compute_inline();
+        }
+    }
+}
+
 // Top-level entry point
 Pipeline ScheduleMutator::mutate() {
     std::vector<Internal::Function> outputs;
+    std::set<std::string> output_function_names;
     for (const auto &f : p.outputs()) {
         outputs.push_back(f.function());
+        output_function_names.insert(f.name());
     }
     std::map<std::string, Internal::Function> env = build_environment(outputs);
     std::vector<std::string> order = topological_order(outputs, env);
     for (int i = 0; i < order.size(); i++) {
-        mutate_function_schedule(env[order[i]]);
+        bool is_output_func = output_function_names.count(order[i]) != 0;
+        mutate_function_schedule(env[order[i]], is_output_func);
     }
     return this->p;
 }
-
-
 
 }
 

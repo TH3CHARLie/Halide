@@ -10,9 +10,6 @@
 
 using namespace Halide;
 
-static int counter = 0;
-static int internal_error_counter = 0;
-
 std::string get_original_var_name(const std::string &var_name) {
     if (var_name.rfind('.' != std::string::npos)) {
         return var_name.substr(var_name.rfind('.') + 1, var_name.size() - 1 - var_name.rfind('.'));
@@ -47,25 +44,27 @@ std::string tail_strategy_code(TailStrategy strategy) {
 std::string stage_schedule_code(const Internal::StageSchedule &stage_schedule, std::string func_name) {
     std::ostringstream ss;
     std::vector<Internal::Split> splits = stage_schedule.splits();
+    ss << func_name;
     if (splits.size() == 0) {
-        return "";
-    }
-    ss << func_name << ".";
-    for (int split_idx = 0; split_idx < splits.size(); ++split_idx) {
-        auto split_type = splits[split_idx].split_type;
-        std::string old_var = get_original_var_name(splits[split_idx].old_var);
-        std::string outer = get_original_var_name(splits[split_idx].outer);
-        std::string inner = get_original_var_name(splits[split_idx].inner);
-        if (split_type == Internal::Split::SplitType::SplitVar) {
-            ss << "split(" << old_var << ", " << outer << ", " << inner << ", " << splits[split_idx].factor << ", " << tail_strategy_code(splits[split_idx].tail) << ")";
-        }
-        else if (split_type == Internal::Split::SplitType::RenameVar) {
-            ss << "rename(" << old_var << ", " << outer << ")";
-        } else if (split_type == Internal::Split::SplitType::FuseVars) {
-            ss << "fuse(" << inner << ", " << outer << ", " << old_var << ")";
-        }
-        if (split_idx != splits.size() - 1) {
-            ss << ".";
+        ss << "";
+    } else {
+        ss << ".";
+        for (int split_idx = 0; split_idx < splits.size(); ++split_idx) {
+            auto split_type = splits[split_idx].split_type;
+            std::string old_var = get_original_var_name(splits[split_idx].old_var);
+            std::string outer = get_original_var_name(splits[split_idx].outer);
+            std::string inner = get_original_var_name(splits[split_idx].inner);
+            if (split_type == Internal::Split::SplitType::SplitVar) {
+                ss << "split(" << old_var << ", " << outer << ", " << inner << ", " << splits[split_idx].factor << ", " << tail_strategy_code(splits[split_idx].tail) << ")";
+            }
+            else if (split_type == Internal::Split::SplitType::RenameVar) {
+                ss << "rename(" << old_var << ", " << outer << ")";
+            } else if (split_type == Internal::Split::SplitType::FuseVars) {
+                ss << "fuse(" << inner << ", " << outer << ", " << old_var << ")";
+            }
+            if (split_idx != splits.size() - 1) {
+                ss << ".";
+            }
         }
     }
     // output a reorder schedule even if the dims are not reordered
@@ -86,17 +85,17 @@ std::string stage_schedule_code(const Internal::StageSchedule &stage_schedule, s
     // output any parallel or vectorize dim
     for (int dim_idx = 0; dim_idx < dims.size(); ++dim_idx) {
         if (dims[dim_idx].for_type == Internal::ForType::Parallel) {
-            ss << ".parallel(" << dims[dim_idx].var << ")";
+            ss << ".parallel(" << get_original_var_name(dims[dim_idx].var) << ")";
         } else if (dims[dim_idx].for_type == Internal::ForType::Vectorized) {
-            ss << ".vectorize(" << dims[dim_idx].var << ")";
+            ss << ".vectorize(" << get_original_var_name(dims[dim_idx].var) << ")";
         } else if (dims[dim_idx].for_type == Internal::ForType::Unrolled) {
-            ss << ".unroll(" << dims[dim_idx].var << ")";
+            ss << ".unroll(" << get_original_var_name(dims[dim_idx].var) << ")";
         }
     }
     return ss.str();
 }
 
-std::string schedule_code(const Pipeline &p) {
+std::string print_pipeline_schedule(const Pipeline &p) {
     std::ostringstream ss;
     std::vector<Internal::Function> outputs;
     for (const auto &f : p.outputs()) {
@@ -111,6 +110,11 @@ std::string schedule_code(const Pipeline &p) {
         for (int stage_idx = 0; stage_idx <= (int)func.updates().size(); ++stage_idx) {
             if (stage_idx == 0) {
                 ss << stage_schedule_code(func.definition().schedule(), func_name);
+                if (func.schedule().compute_level().lock().is_inlined()) {
+                    ss << ".compute_inline()";
+                } else if (func.schedule().compute_level().lock().is_root()) {
+                    ss << ".compute_root()";
+                }
             } else {
                 std::string update_name = func_name + ".update(" + std::to_string(stage_idx - 1) + ")";
                 ss << stage_schedule_code(func.update(stage_idx - 1).schedule(), update_name);
@@ -122,13 +126,22 @@ std::string schedule_code(const Pipeline &p) {
     return ss.str();
 }
 
+static int counter = 0;
+static int internal_error_counter = 0;
+static int unknown_error_counter = 0;
+
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     std::string output_dir = Internal::get_env_variable("FUZZER_OUTPUT_DIR");
+    std::string pipeline_name = Internal::get_env_variable("FUZZER_PIPELINE_NAME");
     if (!Halide::exceptions_enabled()) {
         std::cout << "[SKIP] Halide was compiled without exceptions.\n";
         return 0;
     }
     std::ofstream out(output_dir + "/blurry_" + std::to_string(counter) + ".log");
+    if (!out.is_open()) {
+        std::cerr << "failed to open log file\n";
+        return 0;
+    }
     std::vector<uint8_t> data_copy(data, data + size);
     std::map<std::string, Parameter> params;
     Pipeline deserialized;
@@ -138,22 +151,25 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
             std::cerr << "skip undefined pipeline\n";
             return 0;
         }
-        std::string code = schedule_code(deserialized);
+        std::string hlpipe_file = output_dir + "/bilateral_grid_" + std::to_string(counter) + ".hlpipe";
+        serialize_pipeline(deserialized, hlpipe_file);
+        std::string code = print_pipeline_schedule(deserialized);
         out << code;
         out.flush();
         ImageParam input(Float(32), 2, "input");
         deserialized.compile_to_module({input}, "bilateral_grid", get_host_target());
-        std::string hlpipe_file = output_dir + "/bilateral_grid_" + std::to_string(counter) + ".hlpipe";
-        serialize_pipeline(deserialized, hlpipe_file);
     } catch (const CompileError &e) {
         out << "\nUser Error: " << e.what() << "\n";
     } catch (const InternalError &e) {
         out << "\nInternal Error: " << e.what() << "\n";
         internal_error_counter++;
+    } catch (const std::exception &e) {
+        out << "\nUnknown Error: " << e.what() << "\n";
+        unknown_error_counter++;
     }
     counter++;
-    if (internal_error_counter > 0) {
-        std::cout << "current fuzzing counter " << counter << " internal error counter " << internal_error_counter << "\n";
+    if (unknown_error_counter > 0 || internal_error_counter > 0) {
+        std::cout << "current fuzzing counter " << counter << " internal error counter " << internal_error_counter << " unknown error counter " << unknown_error_counter << "\n";
     }
     return 0;
 }
