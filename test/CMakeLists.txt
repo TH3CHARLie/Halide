@@ -99,4 +99,5 @@ Halide_feature(WITH_TEST_FUZZ "Build fuzz tests" AUTO
                DEPENDS HAS_FUZZ_FLAGS)
 if (WITH_TEST_FUZZ)
     add_subdirectory(fuzz)
+    add_subdirectory(libfuzzer)
 endif ()
