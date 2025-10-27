@@ -362,6 +362,7 @@ tests(GROUPS correctness
       vectorized_reduction_bug.cpp
       widening_lerp.cpp
       widening_reduction.cpp
+      random_pipeline_test.cpp
       )
 
 tests(GROUPS correctness multithreaded

@@ -17,8 +17,8 @@ set(CMAKE_C_COMPILER ${LLVM_ROOT}/bin/clang)
 set(CMAKE_CXX_COMPILER ${LLVM_ROOT}/bin/clang++)
 set(CMAKE_LINKER ${LLVM_ROOT}/bin/ld.lld)
 
-set(CMAKE_C_FLAGS_INIT "-fsanitize=fuzzer-no-link")
-set(CMAKE_CXX_FLAGS_INIT "-fsanitize=fuzzer-no-link")
+set(CMAKE_C_FLAGS_INIT "-fsanitize=fuzzer-no-link -fsanitize=address")
+set(CMAKE_CXX_FLAGS_INIT "-fsanitize=fuzzer-no-link -fsanitize=address")
 
 set(CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=${CMAKE_LINKER}")
 set(CMAKE_MODULE_LINKER_FLAGS_INIT "-fuse-ld=${CMAKE_LINKER}")

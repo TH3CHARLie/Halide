@@ -1,13 +1,14 @@
 tests(GROUPS libfuzzer
       SOURCES
       fuzzer_valid.cpp
+      fuzzer_baseline.cpp
       )
 
 
-foreach(fuzzer "libfuzzer_fuzzer_valid")
+foreach(fuzzer "libfuzzer_fuzzer_valid" "libfuzzer_fuzzer_baseline")
     target_link_libraries(${fuzzer} PRIVATE Halide::Halide)
 
     # By default just build with address-sanitizers/libfuzzer for local testing
-    target_compile_options(${fuzzer} PRIVATE -fsanitize=fuzzer-no-link)
+    target_compile_options(${fuzzer} PRIVATE -fsanitize=fuzzer-no-link -fsanitize=address)
     target_link_options(${fuzzer} PRIVATE -fsanitize=fuzzer)
 endforeach()
