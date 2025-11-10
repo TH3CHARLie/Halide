@@ -29,15 +29,12 @@ int rand_int(int min, int max) {
 bool rand_bool() {
     return rng() % 2 == 0;
 }
-float rand_float() {
-    return rand_int(0, 1 << 30) / (float)(1 << 30);
-}
 
 // Generate random expressions. Given a vector of expresions and a
 // tree depth, recursively generates an expression by combining
 // subexpressions.  At the base case where depth is 0, we just return
 // a randomly chosen input.
-Type expr_types[] = {UInt(8), UInt(16), UInt(32), Int(8), Int(16), Int(32), Float(32)};
+Type expr_types[] = {UInt(8), UInt(16), UInt(32), Int(8), Int(16), Int(32)};
 const int expr_type_count = sizeof(expr_types) / sizeof(expr_types[0]);
 
 typedef Expr (*make_bin_op_fn)(Expr, Expr);
@@ -51,10 +48,6 @@ make_bin_op_fn make_bin_op[] = {
     operator*,
     (make_bin_op_fn)min,
     (make_bin_op_fn)max,
-    (make_bin_op_fn)
-    operator/,
-    (make_bin_op_fn)
-    operator%,
 };
 
 make_bin_op_fn make_bool_bin_op[] = {
@@ -98,7 +91,7 @@ Expr make_leaf(vector<Expr> inputs) {
 }
 
 Expr random_expr_inner(vector<Expr> inputs, int depth, int func_size) {
-    const int op_count = bin_op_count + bool_bin_op_count + 9;
+    const int op_count = bin_op_count + bool_bin_op_count + 4;
     const int func_size_thresh = 1e4;  // if input is too large do not use trig functions
 
     if (depth <= 0) {
@@ -134,38 +127,7 @@ Expr random_expr_inner(vector<Expr> inputs, int depth, int func_size) {
         }
         break;
     }
-    case 3:  // sin
-    {
-        if (func_size > func_size_thresh)
-            break;
-        auto e1 = random_expr_inner(inputs, depth - 1, func_size);
-        return sin(cast<float>(e1));
-    }
-    case 4:  // tanh
-    {
-        if (func_size > func_size_thresh) {
-            // Don't use expensive ops if the function is very large
-            break;
-        }
-        auto e1 = random_expr_inner(inputs, depth - 1, func_size);
-        return tanh(cast<float>(e1));
-    }
-    case 5:  // exp
-    {
-        auto e1 = random_expr_inner(inputs, depth - 1, func_size);
-        return fast_exp(cast<float>(e1));
-    }
-    case 6:  // sqrt
-    {
-        auto e1 = random_expr_inner(inputs, depth - 1, func_size);
-        return sqrt(cast<float>(e1));
-    }
-    case 7:  // log
-    {
-        auto e1 = random_expr_inner(inputs, depth - 1, func_size);
-        return fast_log(cast<float>(e1));
-    }
-    case 8:  // condition
+    case 3:  // condition
     {
         return random_condition(inputs, depth - 1, func_size);
     }
@@ -191,8 +153,6 @@ Expr rand_value(Type t) {
         return cast(t, rand_int(0, 1));
     } else if (t.is_int() || t.is_uint()) {
         return cast(t, rand_int(1, 127));
-    } else if (t.is_float()) {
-        return cast(t, rand_float());
     } else {
         // Shouldn't get here.
         assert(false);
@@ -260,16 +220,15 @@ public:
     // The approximate max number of stages to generate in the random pipeline.
     GeneratorParam<int> max_stages{"max_stages", 20};
 
-    Input<Buffer<float>> input{"input", 3};
+    Input<Buffer<int16_t>> input{"input", 3};
     Input<Buffer<uint8_t>> uint8_weights{"uint8_weights", 4};
     Input<Buffer<uint16_t>> uint16_weights{"uint16_weights", 4};
     Input<Buffer<uint32_t>> uint32_weights{"uint32_weights", 4};
     Input<Buffer<int8_t>> int8_weights{"int8_weights", 4};
     Input<Buffer<int16_t>> int16_weights{"int16_weights", 4};
     Input<Buffer<int32_t>> int32_weights{"int32_weights", 4};
-    Input<Buffer<float>> float32_weights{"float32_weights", 4};
 
-    Output<Buffer<float>> output{"output", 3};
+    Output<Buffer<int16_t>> output{"output", 3};
 
     void set_upcast_types(Type input_type, Type &mult_type, Type &sum_type) {
         if (input_type.is_bool()) {
@@ -313,8 +272,9 @@ public:
         else if (t == Int(32))
             return int32_weights;
         else {
-            assert(t == Float(32));
-            return float32_weights;
+            assert(false);
+            // we should never reach here
+            return int8_weights;
         }
     }
 
@@ -459,19 +419,6 @@ public:
         return {activation, f.w, f.h, f.c};
     }
 
-    Stage tanh_layer(Stage f) {
-        Func activation("tanh");
-        // if input type is int, downcast with 50% chance
-        Type input_type = f.func.value().type();
-        Type output_type;
-        set_downcast_type(input_type, output_type);
-
-        vector<Expr> coords = make_arguments(f.func.args());
-        Expr exp_pos = fast_exp(2 * cast<float>(f.func(coords)));
-        activation(f.func.args()) = (exp_pos - 1) / (exp_pos + 1);
-        return {activation, f.w, f.h, f.c};
-    }
-
     Stage pool2D_unrolled(Stage f, int kernel_min, int kernel_max) {
         vector<Var> args = f.func.args();
         Func pooled2D("pooled2D" + args[0].name() + args[1].name());
@@ -557,7 +504,7 @@ public:
         vector<Expr> coords = make_arguments(f.func.args());
         coords[0] = (coords[0] * stride + r.x);
         coords[1] = (coords[1] * stride + r.y);
-        pooled2D_w(args) = sum(cast<float>(f.func(coords))) / scale;
+        pooled2D_w(args) = sum(cast<int32_t>(f.func(coords))) / scale;
 
         return {pooled2D_w, (f.w + stride - 1) / stride, (f.h + stride - 1) / stride, f.c};
     }
@@ -769,22 +716,6 @@ public:
         return {binary, f.w, f.h, std::min(f.c, g.c)};
     }
 
-    Stage unary_op(Stage f) {
-
-        Func unary("unary_op");
-        vector<Expr> coords = make_arguments(f.func.args());
-        int op_type = rand_int(0, 2);  // exp, log, sqrt
-
-        if (op_type == 0) {
-            unary(f.func.args()) = fast_exp(cast<float>(f.func(coords)));
-        } else if (op_type == 1) {
-            unary(f.func.args()) = fast_log(cast<float>(f.func(coords)));
-        } else if (op_type == 2) {
-            unary(f.func.args()) = sqrt(cast<float>(f.func(coords)));
-        }
-        return {unary, f.w, f.h, f.c};
-    }
-
     // Generate an all-to-all communication in dimension dim,
     // statically unrolled. Currently only every applied over the
     // channels dimension.
@@ -793,7 +724,7 @@ public:
         if (f.c > 16) return all_to_all_r(f, dim);
 
         vector<Expr> reduction_coords = make_arguments(f.func.args());
-        Expr e = 0.f;
+        Expr e = cast(f.func.value().type(), 0);
         for (int i = 0; i < f.c; i++) {
             reduction_coords[dim] = i;
             e += f.func(reduction_coords) * ((i + 1) * f.c + (f.func.args()[dim] + 1));
@@ -881,7 +812,7 @@ public:
         vector<Expr> to_coords = from_coords;
 
         Func hist("hist");
-        hist(f.func.args()) = 0.0f;
+        hist(f.func.args()) = 0;
         from_coords[0] = to_coords[0] * box_size + r.x;
         from_coords[1] = to_coords[1] * box_size + r.y;
         from_coords[2] = 0;
@@ -989,8 +920,8 @@ public:
         } else if (stage_type == 12) {
             int dim = rand_int(0, 2);
             return scan(f, dim);
-        } else if (stage_type == 13 && f.size() < 10000) {
-            return unary_op(f);
+        } else if (stage_type == 13) {
+            return activation(f);
         } else if (stage_type == 14 && f.w > 32 && f.h > 32) {
             return tiled_histogram(f);
         } else if (stage_type == 15) {
@@ -1019,7 +950,7 @@ public:
             Stage next = random_stage(stages);
             stages.push_back(next);
             if (!using_autoscheduler()) {
-                stages.back().func.compute_root().reorder(x, c, y).vectorize(x, 8).parallel(y, 8);
+                stages.back().func.compute_inline();//.reorder(x, c, y).vectorize(x, 8).parallel(y, 8);
             }
         }
 
@@ -1031,7 +962,7 @@ public:
         output = casted.func;
 
         if (!using_autoscheduler()) {
-            output.compute_root().reorder(x, c, y).vectorize(x, 8).parallel(y);
+            output.compute_inline();//.reorder(x, c, y).vectorize(x, 8).parallel(y);
         }
 
         if (using_autoscheduler()) {
@@ -1042,7 +973,6 @@ public:
             int8_weights.dim(0).set_estimate(0, 512).dim(1).set_estimate(-5, 5).dim(2).set_estimate(-5, 5).dim(3).set_estimate(0, 512);
             int16_weights.dim(0).set_estimate(0, 512).dim(1).set_estimate(-5, 5).dim(2).set_estimate(-5, 5).dim(3).set_estimate(0, 512);
             int32_weights.dim(0).set_estimate(0, 512).dim(1).set_estimate(-5, 5).dim(2).set_estimate(-5, 5).dim(3).set_estimate(0, 512);
-            float32_weights.dim(0).set_estimate(0, 512).dim(1).set_estimate(-5, 5).dim(2).set_estimate(-5, 5).dim(3).set_estimate(0, 512);
 
             output.set_estimate(output.args()[0], 0, 2000);
             output.set_estimate(output.args()[1], 0, 2000);
